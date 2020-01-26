@@ -1,0 +1,38 @@
+<misterromdescription>
+	<name>Tapper</name>
+	<mameversion>0216</mameversion>
+	<mratimestamp>201912310000</mratimestamp>
+	<year>1983</year>
+	<manufacturer>Bally Midway</manufacturer>
+	<category>Action</category>
+	<rbf>mcr3</rbf>
+	<setname>tapper</setname>
+	<switches default="FF 00">
+		<dip bits="2"    name="Demo Sounds" ids="Off,On"/>
+		<dip bits="6"    name="Cabinet" ids="Cocktail,Upright"/>
+		<dip bits="7"    name="Coin Meters" ids="1,2"/>
+	</switches>
+	<rom index="1">
+		<part>0</part>
+	</rom>
+	<rom index="0" zip="tapper.zip" md5="7300967c61a0f1b887c12f3989e500bb" type="merged|nonmerged">
+		<part name="tapper_c.p.u._pg_0_1c_1-27-84.1c"/>
+		<part name="tapper_c.p.u._pg_1_2c_1-27-84.2c"/>
+		<part name="tapper_c.p.u._pg_2_3c_1-27-84.3c"/>
+		<part name="tapper_c.p.u._pg_3_4c_1-27-84.4c"/>
+		<part name="tapper_sound_snd_0_a7_12-7-83.a7"/>
+		<part name="tapper_sound_snd_1_a8_12-7-83.a8"/>
+		<part name="tapper_sound_snd_2_a9_12-7-83.a9"/>
+		<part name="tapper_sound_snd_3_a10_12-7-83.a10"/>
+		<part name="tapper_video_fg_1_a7_12-7-83.a7"/>
+		<part name="tapper_video_fg_0_a8_12-7-83.a8"/>
+		<part name="tapper_video_fg_3_a5_12-7-83.a5"/>
+		<part name="tapper_video_fg_2_a6_12-7-83.a6"/>
+		<part name="tapper_video_fg_5_a3_12-7-83.a3"/>
+		<part name="tapper_video_fg_4_a4_12-7-83.a4"/>
+		<part name="tapper_video_fg_7_a1_12-7-83.a1"/>
+		<part name="tapper_video_fg_6_a2_12-7-83.a2"/>
+		<part name="tapper_c.p.u._bg_1_6f_12-7-83.6f"/>
+		<part name="tapper_c.p.u._bg_0_5f_12-7-83.5f"/>
+	</rom>
+</misterromdescription>
