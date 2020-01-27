@@ -144,6 +144,7 @@ port(
  video_hs       : out std_logic;
  video_vs       : out std_logic;
  video_ce       : out std_logic;
+ video_hflip    : in  std_logic;
  
  separate_audio : in  std_logic;
  audio_out_l    : out std_logic_vector(15 downto 0);
@@ -167,8 +168,6 @@ port(
  dl_addr          : in std_logic_vector(15 downto 0);
  dl_data          : in std_logic_vector( 7 downto 0);
  dl_wr            : in std_logic
-
- --dbg_cpu_addr : out std_logic_vector(15 downto 0)
  );
 end tapper;
 
@@ -295,27 +294,13 @@ architecture struct of tapper is
  signal ssio_iowe : std_logic;
  signal ssio_do   : std_logic_vector(7 downto 0);
  
--- signal max_sprite: std_logic_vector(7 downto 0); -- dbg
--- signal max_sprite_r: std_logic_vector(7 downto 0); -- dbg
--- signal max_sprite_rr: std_logic_vector(7 downto 0); -- dbg
- 
  signal dl_bg_graphics_1_we : std_logic;
  signal dl_bg_graphics_2_we : std_logic;
- signal dl_cg_graphics_we   : std_logic;
 begin
 
 clock_vid  <= clock_40;
 clock_vidn <= not clock_40;
 reset_n    <= not reset;
-
--- debug 
---process (reset, clock_vid)
---begin
--- if rising_edge(clock_vid) and cpu_ena ='1' and cpu_mreq_n ='0' then
---   dbg_cpu_addr<= "000000000000000" & service; --cpu_addr;
---   dbg_cpu_addr<= max_sprite_rr & "0000000" & service; --cpu_addr;
--- end if;
---end process;
 
 -- make enables clock from clock_vid
 process (clock_vid, reset)
@@ -399,14 +384,16 @@ begin
 						hs_cnt <= hs_cnt + 1;
 					end if;
 					
-					video_hblank <= '1';
-					if hcnt >= 2+16 and hcnt < 514+16 then
+					if hcnt = 1+16 then
 						video_hblank <= '0';
+						video_vblank <= '1';
+						if vcnt >= 0 and vcnt < 240 then
+							video_vblank <= '0';
+						end if;
 					end if;
 
-					video_vblank <= '1';
-					if vcnt >= 1 and vcnt < 241 then
-						video_vblank <= '0';
+					if hcnt = 513+16 then
+						video_hblank <= '1';
 					end if;
 				
 					if    hs_cnt =  0 then hsync0 <= '0'; video_hs <= '0';
@@ -508,9 +495,7 @@ ssio_iowe <= '1' when cpu_wr_n = '0' and cpu_ioreq_n = '0' else '0';
 --------- sprite machine ---------
 ----  91464 Super Video Board ----
 ----------------------------------
---hflip <= not(hcnt);  -- apply mirror horizontal flip
-hflip <= hcnt;       -- do not apply mirror horizontal flip
-
+hflip <= hcnt when video_hflip = '0' else not hcnt;
 vflip <= vcnt(8 downto 0) & not top_frame when tv15Khz_mode = '1' else vcnt; -- do not apply mirror flip
 
 sp_buffer_sel <= vflip(1) when tv15Khz_mode = '1' else vflip(0);
@@ -518,24 +503,12 @@ sp_buffer_sel <= vflip(1) when tv15Khz_mode = '1' else vflip(0);
 process (clock_vid)
 begin
 	if rising_edge(clock_vid) then
-
--- debug -- max sprite counter
---	if vcnt = 0 and hcnt = 0 and pix_ena = '1' then 
---		max_sprite_r <= (others => '0');
---		if max_sprite_r > max_sprite_rr then
---			max_sprite_rr <= max_sprite_r;
---		end if;
---	end if;
 	
 	if hcnt = 0 then
 		sp_cnt <= (others => '0');
 		sp_input_phase <= (others => '0');
 		sp_on_line <= '0';
 		sp_done <= '0';			
---		max_sprite <= (others => '0');
---		if max_sprite > max_sprite_r then
---			max_sprite_r <= max_sprite;
---		end if;
 	end if;
 			
 	if sp_done = '0' then
@@ -615,13 +588,13 @@ sp_graphx_b_ok <= '1' when sp_graphx_b /= x"0" else '0';
 								
 sp_buffer_ram1a_di  <= sp_attr(3 downto 0) & sp_graphx_a                when sp_buffer_sel = '1' else x"00";
 sp_buffer_ram1b_di  <= sp_attr(3 downto 0) & sp_graphx_b                when sp_buffer_sel = '1' else x"00";
-sp_buffer_ram1_addr <= sp_hcnt(8 downto 1)                              when sp_buffer_sel = '1' else hflip(8 downto 1) - x"04";
+sp_buffer_ram1_addr <= sp_hcnt(8 downto 1)                              when sp_buffer_sel = '1' else hflip(8 downto 1) + x"0C" when video_hflip = '1' else hflip(8 downto 1) - x"04";
 sp_buffer_ram1a_we  <= not sp_hcnt(0) and sp_on_line and sp_graphx_a_ok when sp_buffer_sel = '1' else hcnt(0);
 sp_buffer_ram1b_we  <= not sp_hcnt(0) and sp_on_line and sp_graphx_b_ok when sp_buffer_sel = '1' else hcnt(0);
 
 sp_buffer_ram2a_di  <= sp_attr(3 downto 0) & sp_graphx_a                when sp_buffer_sel = '0' else x"00";
 sp_buffer_ram2b_di  <= sp_attr(3 downto 0) & sp_graphx_b                when sp_buffer_sel = '0' else x"00";
-sp_buffer_ram2_addr <= sp_hcnt(8 downto 1)                              when sp_buffer_sel = '0' else hflip(8 downto 1) - x"04";
+sp_buffer_ram2_addr <= sp_hcnt(8 downto 1)                              when sp_buffer_sel = '0' else hflip(8 downto 1) + x"0C" when video_hflip = '1' else hflip(8 downto 1) - x"04";
 sp_buffer_ram2a_we  <= not sp_hcnt(0) and sp_on_line and sp_graphx_a_ok when sp_buffer_sel = '0' else hcnt(0);
 sp_buffer_ram2b_we  <= not sp_hcnt(0) and sp_on_line and sp_graphx_b_ok when sp_buffer_sel = '0' else hcnt(0);
 
@@ -671,7 +644,7 @@ begin
 				end case;
 			end if;
 			
-			sp_palette_addr <= not sp_col(1 downto 0) & sp_vid;
+			sp_palette_addr <= ((not sp_col(1 downto 0)) xor (video_hflip & video_hflip)) & sp_vid;
 		
 		end if;
 
@@ -682,10 +655,7 @@ end process;
 -- mux char/sprite video --
 ---------------------------
 palette_we <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (cpu_addr and x"F800") = x"F800" else '0'; -- 0xF800-F87F + mirroring 0x0780
-
-palette_addr <= cpu_addr(6 downto 1) when palette_we = '1'                    else 
-					 bg_palette_addr      when sp_palette_addr(2 downto 0) = "000" else
-					 sp_palette_addr;
+palette_addr <= bg_palette_addr when sp_palette_addr(2 downto 0) = "000" else sp_palette_addr;
 
 process (clock_vid)
 begin
@@ -749,12 +719,6 @@ port map (
 );
 
 -- cpu program ROM 0x0000-0xDFFF
---rom_cpu : entity work.timber_cpu
---port map(
--- clk  => clock_vidn,
--- addr => cpu_addr(15 downto 0),
--- data => cpu_rom_do
---);
 cpu_rom_addr <= cpu_addr(15 downto 0);
 
 -- working RAM   0xE000-0xE7FF
@@ -845,11 +809,7 @@ port map(
  q    => sp_buffer_ram2b_do
 );
 
---added
-dl_cg_graphics_we <= '0';
-
 -- background graphics ROM 6F
---bg_graphics_1 : entity work.tapper_bg_bits_1
 bg_graphics_1 : entity work.dpram
 generic map(
 	aWidth => 14,
@@ -868,7 +828,6 @@ dl_bg_graphics_2_we <= '1' when dl_wr = '1' and dl_addr(15 downto 14) = "01" els
 
 
 -- background graphics ROM 5F
---bg_graphics_2 : entity work.tapper_bg_bits_2
 bg_graphics_2 : entity work.dpram
 generic map(
 	aWidth => 14,
@@ -884,7 +843,6 @@ port map(
  d_b    => dl_data
 );
 dl_bg_graphics_1_we <= '1' when dl_wr = '1' and dl_addr(15 downto 14) = "00" else '0';
-
 
 
 -- timber_sound_board 
@@ -910,20 +868,21 @@ port map(
  audio_out_r    => audio_out_r,
 
  cpu_rom_addr => snd_rom_addr,
- cpu_rom_do => snd_rom_do,
-
- dbg_cpu_addr => open --dbg_cpu_addr
+ cpu_rom_do => snd_rom_do
 );
  
 -- background & sprite palette
-palette : entity work.gen_ram
+palette : entity work.dpram
 generic map( dWidth => 9, aWidth => 6)
 port map(
- clk  => clock_vidn,
- we   => palette_we,
- addr => palette_addr,
- d    => cpu_addr(0) & cpu_do,
- q    => palette_do
+ clk_a  => clock_vidn,
+ we_a   => palette_we,
+ addr_a => cpu_addr(6 downto 1),
+ d_a    => cpu_addr(0) & cpu_do,
+
+ clk_b  => clock_vidn,
+ addr_b => palette_addr,
+ q_b    => palette_do
 );
 
 end struct;

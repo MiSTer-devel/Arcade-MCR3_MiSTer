@@ -119,16 +119,15 @@ localparam CONF_STR = {
 	"H0O1,Aspect Ratio,Original,Wide;",
 	//"H0O2,Orientation,Vert,Horz;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"O6,Audio,Mono,Stereo;",
 	"-;",
+	"h1O7,Rotate,Buttons,Spinner;",
+	"h1-;",
 	"DIP;",
 	"-;",
-	"O6,Service,Off,On;",
-	"O7,Audio,Mono,Stereo;",
-	"OD,Deinterlacer,Off,On;",
-	"-;",
 	"R0,Reset;",
-	"J1,Fire1,Fire2,Start,Coin;",
-	"jn,A,B,Start,R;",
+	"J1,Fire A,Fire B,Fire C,Fire D,Rotate CW,Rotate CCW,Start1+Coin,Start2+Coin;",
+	"jn,A,B,X,Y,R,L,Start,Select;",
 	"V,v",`BUILD_DATE
 };
 
@@ -162,9 +161,8 @@ wire  [7:0] ioctl_index;
 
 wire [10:0] ps2_key;
 
-wire [15:0] joystick_0, joystick_1;
-wire [15:0] joy = joystick_0 | joystick_1;
-wire [15:0] joy_a;
+wire [15:0] joy1, joy2;
+wire [15:0] joy = joy1 | joy2;
 
 wire [21:0] gamma_bus;
 
@@ -177,7 +175,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask(direct_video),
+	.status_menumask({mod_dotron,direct_video}),
 	.forced_scandoubler(forced_scandoubler),
 	.gamma_bus(gamma_bus),
 	.direct_video(direct_video),
@@ -188,11 +186,13 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.ioctl_dout(ioctl_dout),
 	.ioctl_index(ioctl_index),
 
-	.joystick_0(joystick_0),
-	.joystick_1(joystick_1),
-	.joystick_analog_0(joy_a),
+	.joystick_0(joy1),
+	.joystick_1(joy2),
+
 	.ps2_key(ps2_key)
 );
+
+wire rom_download = ioctl_download && !ioctl_index;
 
 wire [15:0] rom_addr;
 wire [15:0] rom_do;
@@ -202,10 +202,10 @@ wire [14:0] sp_addr;
 wire [31:0] sp_do;
 
 // ROM structure:
-//  0000 -  DFFF - Main ROM (8 bit)
-//  E000 -  11FFF - Super Sound board ROM (8 bit)
-// 12000 -  31FFF - Sprite ROMs (32 bit)
-// 32000 -  39FFF - BG ROMS
+// 00000 - 0DFFF  - Main ROM (8 bit)
+// 0E000 - 11FFF - Super Sound board ROM (8 bit)
+// 12000 - 31FFF - Sprite ROMs (32 bit)
+// 32000 - 39FFF - BG ROMS
 
 //wire [24:0] rom_ioctl_addr = ~ioctl_addr[16] ? ioctl_addr : // 8 bit ROMs
 //                             {ioctl_addr[24:16], ioctl_addr[15], ioctl_addr[13:0], ioctl_addr[14]}; // 16 bit ROM
@@ -234,7 +234,6 @@ sdram sdram
 	.cpu2_addr     ( rom_download ? 16'hffff : (16'h7000 + snd_addr[13:1]) ),
 	.cpu2_q        ( snd_do ),
 	
-
 	// port2 for sprite graphics
 	.port2_req     ( port2_req ),
 	.port2_ack     ( ),
@@ -250,109 +249,127 @@ sdram sdram
 
 // ROM download controller
 always @(posedge clk_sys) begin
-        reg        ioctl_wr_last = 0;
+	reg        ioctl_wr_last = 0;
 
-        ioctl_wr_last <= ioctl_wr && !ioctl_index;
-        if (rom_download) begin
-                if (~ioctl_wr_last && (ioctl_wr && !ioctl_index)) begin
-                        port1_req <= ~port1_req;
-                        port2_req <= ~port2_req;
-                end
-        end
+	ioctl_wr_last <= ioctl_wr && !ioctl_index;
+	if (rom_download) begin
+		if (~ioctl_wr_last && (ioctl_wr && !ioctl_index)) begin
+			port1_req <= ~port1_req;
+			port2_req <= ~port2_req;
+		end
+	end
 end
 
 // reset signal generation
-reg reset = 1;
-reg rom_loaded = 0;
-
-always @(posedge clk_sys) begin
-	reg ioctl_downloadD;
-	reg [15:0] reset_count;
-	ioctl_downloadD <= ioctl_download;
-
-	// generate a second reset signal - needed for some reason
-	if (RESET | status[0] | buttons[1] | ~rom_loaded) reset_count <= 16'hffff;
-	else if (reset_count != 0) reset_count <= reset_count - 1'd1;
-
-	if (ioctl_downloadD & ~rom_download) rom_loaded <= 1;
-	reset <= RESET | status[0] | buttons[1] | ~rom_loaded | (reset_count == 16'h0001);
-end
+reg reset;
+always @(posedge clk_sys) reset <= RESET | status[0] | buttons[1];
 
 wire       pressed = ps2_key[9];
-wire [8:0] code    = ps2_key[8:0];
+wire [7:0] code    = ps2_key[7:0];
 always @(posedge clk_sys) begin
 	reg old_state;
 	old_state <= ps2_key[10];
 	
 	if(old_state != ps2_key[10]) begin
 		casex(code)
-			'hX75: btn_up          <= pressed; // up
-			'hX72: btn_down        <= pressed; // down
-			'hX6B: btn_left        <= pressed; // left
-			'hX74: btn_right       <= pressed; // right
-			'h029: btn_fire1a      <= pressed; // space
-			'h014: btn_fire1b      <= pressed; // ctrl
-
-			'h005: btn_start_1     <= pressed; // F1
-			'h006: btn_start_2     <= pressed; // F2
-			'h004: btn_coin_1	   <= pressed; // F3
-			'h00C: btn_coin_2	   <= pressed; // F4
-
-			//'h003: btn_cheat       <= pressed; // F5
-
+			'h75: btn_up            <= pressed; // up
+			'h72: btn_down          <= pressed; // down
+			'h6B: btn_left          <= pressed; // left
+			'h74: btn_right         <= pressed; // right
+			'h76: btn_coin1         <= pressed; // ESC
+			'h05: btn_start1        <= pressed; // F1
+			'h06: btn_start2        <= pressed; // F2
+			//'h04: btn_start3        <= pressed; // F3
+			//'h0C: btn_start4        <= pressed; // F4
+			'h12: btn_fireD         <= pressed; // l-shift
+			'h14: btn_fireC         <= pressed; // ctrl
+			'h11: btn_fireB         <= pressed; // alt
+			'h29: btn_fireA         <= pressed; // Space
 			// JPAC/IPAC/MAME Style Codes
-			'h016: btn_start_1     <= pressed; // 1
-			'h01E: btn_start_2     <= pressed; // 2
-			'h02E: btn_coin_1      <= pressed; // 5
-			'h036: btn_coin_2      <= pressed; // 6
-			'h02D: btn_up_2        <= pressed; // R
-			'h02B: btn_down_2      <= pressed; // F
-			'h023: btn_left_2      <= pressed; // D
-			'h034: btn_right_2     <= pressed; // G
-			'h01C: btn_fire2a      <= pressed; // A
-			//need btn_fire_22
+			'h16: btn_start1        <= pressed; // 1
+			'h1E: btn_start2        <= pressed; // 2
+			//'h26: btn_start3        <= pressed; // 3
+			//'h25: btn_start4        <= pressed; // 4
+			'h2E: btn_coin1         <= pressed; // 5
+			'h36: btn_coin2         <= pressed; // 6
+			//'h3D: btn_coin3         <= pressed; // 7
+			//'h3E: btn_coin4         <= pressed; // 8
+			'h2D: btn_up2           <= pressed; // R
+			'h2B: btn_down2         <= pressed; // F
+			'h23: btn_left2         <= pressed; // D
+			'h34: btn_right2        <= pressed; // G
+			'h1C: btn_fire2A        <= pressed; // A
+			'h1B: btn_fire2B        <= pressed; // S
+			'h21: btn_fire2C        <= pressed; // Q
+			'h1D: btn_fire2D        <= pressed; // W
+			//'h1D: btn_fire2E        <= pressed; // W
+			//'h1D: btn_fire2F        <= pressed; // W
+			//'h1D: btn_tilt <= pressed; // W
 		endcase
 	end
 end
 
-reg btn_up     = 0;
-reg btn_down   = 0;
-reg btn_right  = 0;
 reg btn_left   = 0;
-reg btn_fire1a = 0;
-reg btn_fire1b = 0;
-//reg btn_cheat  = 0;
+reg btn_right  = 0;
+reg btn_down   = 0;
+reg btn_up     = 0;
+reg btn_fireA  = 0;
+reg btn_fireB  = 0;
+reg btn_fireC  = 0;
+reg btn_fireD  = 0;
+reg btn_coin1  = 0;
+reg btn_coin2  = 0;
+reg btn_start1 = 0;
+reg btn_start2 = 0;
+reg btn_up2    = 0;
+reg btn_down2  = 0;
+reg btn_left2  = 0;
+reg btn_right2 = 0;
+reg btn_fire2A = 0;
+reg btn_fire2B = 0;
+reg btn_fire2C = 0;
+reg btn_fire2D = 0;
 
-reg btn_start_1 = 0;
-reg btn_start_2 = 0;
-reg btn_coin_1  = 0;
-reg btn_coin_2  = 0;
-reg btn_up_2    = 0;
-reg btn_down_2  = 0;
-reg btn_left_2  = 0;
-reg btn_right_2 = 0;
-reg btn_fire2a  = 0;
-reg btn_fire2b  = 0;
+wire service = sw[1][0];
 
-wire m_up1    = btn_up      | joystick_0[3];
-wire m_down1  = btn_down    | joystick_0[2];
-wire m_left1  = btn_left    | joystick_0[1];
-wire m_right1 = btn_right   | joystick_0[0];
-wire m_fire1a = btn_fire1a  | joystick_0[4];
-wire m_fire1b = btn_fire1b  | joystick_0[5];
+// Generic controls - make a module from this?
 
-wire m_up2    = btn_up_2    | joystick_1[3];
-wire m_down2  = btn_down_2  | joystick_1[2];
-wire m_left2  = btn_left_2  | joystick_1[1];
-wire m_right2 = btn_right_2 | joystick_1[0];
-wire m_fire2a = btn_fire2a  | joystick_1[4];
-wire m_fire2b = btn_fire2b  | joystick_1[5];
+wire m_start1  = btn_start1 | joy[10];
+wire m_start2  = btn_start2 | joy[11];
+wire m_coin1   = btn_coin1  | btn_coin2 | joy[10] | joy[11];
 
-wire m_start1 = btn_start_1 | joystick_0[6];
-wire m_start2 = btn_start_2 | joystick_1[6];
+wire m_right1  = btn_right  | joy1[0];
+wire m_left1   = btn_left   | joy1[1];
+wire m_down1   = btn_down   | joy1[2];
+wire m_up1     = btn_up     | joy1[3];
+wire m_fire1a  = btn_fireA  | joy1[4];
+wire m_fire1b  = btn_fireB  | joy1[5];
+wire m_fire1c  = btn_fireC  | joy1[6];
+wire m_fire1d  = btn_fireD  | joy1[7];
+wire m_rcw1    =              joy1[8];
+wire m_rccw1   =              joy1[9];
 
-wire m_coin1  = btn_coin_1  | joystick_0[7] | joystick_1[7];
-wire m_coin2  = btn_coin_2;
+wire m_right2  = btn_right2 | joy2[0];
+wire m_left2   = btn_left2  | joy2[1];
+wire m_down2   = btn_down2  | joy2[2];
+wire m_up2     = btn_up2    | joy2[3];
+wire m_fire2a  = btn_fire2A | joy2[4];
+wire m_fire2b  = btn_fire2B | joy2[5];
+wire m_fire2c  = btn_fire2C | joy2[6];
+wire m_fire2d  = btn_fire2D | joy2[7];
+wire m_rcw2    =              joy1[8];
+wire m_rccw2   =              joy1[9];
+
+wire m_right   = m_right1 | m_right2;
+wire m_left    = m_left1  | m_left2; 
+wire m_down    = m_down1  | m_down2; 
+wire m_up      = m_up1    | m_up2;   
+wire m_fire_a  = m_fire1a | m_fire2a;
+wire m_fire_b  = m_fire1b | m_fire2b;
+wire m_fire_c  = m_fire1c | m_fire2c;
+wire m_fire_d  = m_fire1d | m_fire2d;
+wire m_rcw     = m_rcw1   | m_rcw2;
+wire m_rccw    = m_rccw1  | m_rccw2;
 
 reg  [7:0] input_0;
 reg  [7:0] input_1;
@@ -360,24 +377,21 @@ reg  [7:0] input_2;
 reg  [7:0] input_3;
 reg  [7:0] input_4;
 
-reg service;
-assign service = status[6];
-
-reg mod_tapper    = 0;
-reg mod_timber    = 0;
-
+reg mod_tapper = 0;
+reg mod_timber = 0;
+reg mod_dotron = 0;
 always @(posedge clk_sys) begin
 	reg [7:0] mod = 0;
 	if (ioctl_wr & (ioctl_index==1)) mod <= ioctl_dout;
 
-        mod_tapper    <= ( mod == 0 );
-        mod_timber    <= ( mod == 1 );
+	mod_tapper <= ( mod == 0 );
+	mod_timber <= ( mod == 1 );
+	mod_dotron <= ( mod == 2 );
 end
 
 // load the DIPS
 reg [7:0] sw[8];
 always @(posedge clk_sys) if (ioctl_wr && (ioctl_index==254) && !ioctl_addr[24:3]) sw[ioctl_addr[2:0]] <= ioctl_dout;
-
 
 // Game specific sound board/DIP/input settings
 always @(*) begin
@@ -388,48 +402,44 @@ always @(*) begin
 	input_3 = sw[0];
 	input_4 = 8'hff;
 
-
 	if (mod_tapper) begin
-                input_0 = ~{ service, 3'b0, m_start2, m_start1, m_coin2, m_coin1 };
-                input_1 = ~{ 2'b0, m_fire1b, m_fire1a, m_up1, m_down1, m_left1, m_right1 };
-                input_2 = ~{ 2'b0, m_fire2b, m_fire2a, m_up2, m_down2, m_left2, m_right2 };
-                //input_3 = {coin_meters, upright, 3'b111, demo_sound, 2'b11 };
-                input_4 = 8'hFF;
-				
-    end else if (mod_timber) begin
-                input_0 = ~{ service, 3'b0, m_start2, m_start1, m_coin2, m_coin1 };
-                input_1 = ~{ 2'b0, m_fire1b, m_fire1a, m_up1, m_down1, m_left1, m_right1 };
-                input_2 = ~{ 2'b0, m_fire2b, m_fire2a, m_up2, m_down2, m_left2, m_right2 };
-                //input_3 = {coin_meters, upright, 3'b111, demo_sound, 2'b11 };
-                input_4 = 8'hFF;					 
- 				 
+		input_0 = ~{ service, 3'b000, m_start2, m_start1, 1'b0, m_coin1 };
+		input_1 = ~{ 3'b000, m_fire_a, m_up, m_down, m_left, m_right };
+		input_2 = ~{ 3'b000, m_fire_a, m_up, m_down, m_left, m_right };
+	end
+	else if (mod_timber) begin
+		input_0 = ~{ service, 3'b000, m_start2, m_start1, 1'b0, m_coin1 };
+		input_1 = ~{ 2'b00, m_fire1a, m_fire1b, m_up1, m_down1, m_left1, m_right1 };
+		input_2 = ~{ 2'b00, m_fire2a, m_fire2b, m_up2, m_down2, m_left2, m_right2 };
+	end
+	else if (mod_dotron) begin
+		input_0 = ~{ service, 2'b00, m_fire_a, m_start2, m_start1, 1'b0, m_coin1 };
+		input_1 = ~{ 1'b0, spin_tron[7:1] };
+		input_2 = ~{ 1'b0, m_fire_b, m_fire_c, m_fire_d, m_down, m_up, m_right, m_left };
 	end
 end
 
-wire rom_download = ioctl_download && !ioctl_index;
-wire ce_pix_old;
+wire [7:0] spin_tron;
+spinner spinner_tr (
+	.clock_40(clk_sys),
+	.reset(reset),
+	.btn_acc(0),
+	.btn_left(m_rccw),
+	.btn_right(m_rcw),
+	.ctc_zc_to_2(vs),
+	.use_spinner(status[7]),
+	.spin_angle(spin_tron)
+);
+
+wire ce_pix;
 wire hblank, vblank;
 wire hs, vs;
 wire [2:0] r,g;
 wire [2:0] b;
 
-
-reg ce_pix;
-always @(posedge clk_sys) begin
-        reg [2:0] div;
-
-        div <= div + 1'd1;
-        ce_pix <= !div;
-end
-
-// 512x480
-//arcade_rotate_fx #(496,240,9) arcade_video
-//arcade_fx #(480,9) arcade_video
-//arcade_fx #(512,9) arcade_video
-arcade_video #(512,480,9) arcade_video
+arcade_video #(512,240,9) arcade_video
 (
 	.*,
-	.ce_pix(status[13] ? ce_pix_old: ce_pix),
 	.clk_video(clk_sys),
 	.RGB_in({r,g,b}),
 	.HBlank(hblank),
@@ -459,10 +469,11 @@ Tapper Tapper
 	.video_hblank(hblank),
 	.video_hs(hs),
 	.video_vs(vs),
-	.video_ce(ce_pix_old),
-	.tv15Khz_mode(~status[13]),
+	.video_ce(ce_pix),
+	.video_hflip(mod_dotron),
+	.tv15Khz_mode(1),
 	//.separate_audio(1'b1),
-	.separate_audio(status[7]),
+	.separate_audio(status[6]),
 	.audio_out_l(audio_l),
 	.audio_out_r(audio_r),
 	.input_0      ( input_0),
@@ -480,7 +491,5 @@ Tapper Tapper
 	.dl_wr        ( ioctl_wr & !ioctl_index),
 	.dl_data      ( ioctl_dout )
 );
-
-
 
 endmodule

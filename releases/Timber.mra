@@ -11,6 +11,7 @@
 		<dip bits="2"    name="Demo Sounds" ids="Off,On"/>
 		<dip bits="6"    name="Cabinet" ids="Cocktail,Upright"/>
 		<dip bits="7"    name="Coin Meters" ids="1,2"/>
+		<dip bits="8"    name="Service" ids="Off,On"/>
 	</switches>
 	<rom index="1">
 		<part>1</part>
