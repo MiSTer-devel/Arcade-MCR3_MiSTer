@@ -105,19 +105,14 @@ assign LED_USER  = ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 
-//assign HDMI_ARX = status[1] ? 8'd16 : status[2] ? 8'd4 : 8'd3;
-//assign HDMI_ARY = status[1] ? 8'd9  : status[2] ? 8'd3 : 8'd4;
-//assign HDMI_ARX = status[1] ? 8'd16 : status[2] ? 8'd21 : 8'd20;
-//;assign HDMI_ARY = status[1] ? 8'd9  : status[2] ? 8'd20 : 8'd21;
-assign HDMI_ARX = status[1] ? 8'd16 : 8'd4;
-assign HDMI_ARY = status[1] ? 8'd9  : 8'd3;
-
+assign HDMI_ARX = status[1] ? 8'd16 : (status[2] | landscape) ? 8'd4 : 8'd3;
+assign HDMI_ARY = status[1] ? 8'd9  : (status[2] | landscape) ? 8'd3 : 8'd4;
 
 `include "build_id.v" 
 localparam CONF_STR = {
 	"A.TAPPER;;",
 	"H0O1,Aspect Ratio,Original,Wide;",
-	//"H0O2,Orientation,Vert,Horz;",
+	"H2H0O2,Orientation,Vert,Horz;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O6,Audio,Mono,Stereo;",
 	"-;",
@@ -175,7 +170,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({mod_dotron,direct_video}),
+	.status_menumask({landscape,mod_dotron,direct_video}),
 	.forced_scandoubler(forced_scandoubler),
 	.gamma_bus(gamma_bus),
 	.direct_video(direct_video),
@@ -380,6 +375,7 @@ reg  [7:0] input_4;
 reg mod_tapper = 0;
 reg mod_timber = 0;
 reg mod_dotron = 0;
+reg mod_journey= 0;
 always @(posedge clk_sys) begin
 	reg [7:0] mod = 0;
 	if (ioctl_wr & (ioctl_index==1)) mod <= ioctl_dout;
@@ -387,15 +383,19 @@ always @(posedge clk_sys) begin
 	mod_tapper <= ( mod == 0 );
 	mod_timber <= ( mod == 1 );
 	mod_dotron <= ( mod == 2 );
+	mod_journey<= ( mod == 3 );
 end
 
 // load the DIPS
 reg [7:0] sw[8];
 always @(posedge clk_sys) if (ioctl_wr && (ioctl_index==254) && !ioctl_addr[24:3]) sw[ioctl_addr[2:0]] <= ioctl_dout;
 
+reg landscape;
+
 // Game specific sound board/DIP/input settings
 always @(*) begin
 
+	landscape = 1; 
 	input_0 = 8'hff;
 	input_1 = 8'hff;
 	input_2 = 8'hff;
@@ -417,6 +417,12 @@ always @(*) begin
 		input_1 = ~{ 1'b0, spin_tron[7:1] };
 		input_2 = ~{ 1'b0, m_fire_b, m_fire_c, m_fire_d, m_down, m_up, m_right, m_left };
 	end
+	else if (mod_journey) begin
+		landscape = 0;
+		input_0 = ~{ service, 2'b00, m_fire_a, m_start2, m_start1, 1'b0, m_coin1 };
+		input_1 = ~{ 4'b0000, m_down, m_up, m_right, m_left };
+		input_2 = ~{ 3'b000, m_fire_a, m_down, m_up, m_right, m_left };
+	end
 end
 
 wire [7:0] spin_tron;
@@ -437,6 +443,8 @@ wire hs, vs;
 wire [2:0] r,g;
 wire [2:0] b;
 
+wire no_rotate = status[2] | direct_video | landscape;
+ 
 arcade_video #(512,240,9) arcade_video
 (
 	.*,
@@ -447,7 +455,6 @@ arcade_video #(512,240,9) arcade_video
 	.HSync(hs),
 	.VSync(vs),
 
-	.no_rotate(1),
 	.rotate_ccw(0),
 	.fx(status[5:3])
 );
@@ -481,6 +488,7 @@ Tapper Tapper
 	.input_2      ( input_2),
 	.input_3      ( input_3),
 	.input_4      ( input_4),	
+	.mcr2p5       ( mod_journey ),
 	.cpu_rom_addr ( rom_addr ),
 	.cpu_rom_do   ( rom_addr[0] ? rom_do[15:8] : rom_do[7:0] ),
 	.snd_rom_addr ( snd_addr ),

@@ -156,6 +156,8 @@ port(
  input_3        : in std_logic_vector( 7 downto 0);
  input_4        : in std_logic_vector( 7 downto 0);
  
+ mcr2p5         : in  std_logic;
+
  cpu_rom_addr   : out std_logic_vector(15 downto 0);
  cpu_rom_do     : in std_logic_vector(7 downto 0);
  snd_rom_addr   : out std_logic_vector(13 downto 0);
@@ -192,6 +194,8 @@ architecture struct of tapper is
 
  signal cpu_addr    : std_logic_vector(15 downto 0);
  signal cpu_di      : std_logic_vector( 7 downto 0);
+ signal cpu_di2     : std_logic_vector( 7 downto 0);
+ signal cpu_di3     : std_logic_vector( 7 downto 0);
  signal cpu_do      : std_logic_vector( 7 downto 0);
  signal cpu_wr_n    : std_logic;
  signal cpu_rd_n    : std_logic;
@@ -318,7 +322,7 @@ begin
 	end if;   		
 end process;
 --
-cpu_ena <= '1' when clock_cnt(2 downto 0) = "111" else '0'; -- (5MHz for 91490 super cpu board)
+cpu_ena <= '1' when (clock_cnt(2 downto 0) = "111" and mcr2p5 = '0') or (clock_cnt = "1111" and mcr2p5 = '1') else '0'; -- (5MHz for 91490 super cpu board)
 pix_ena <= '1' when (clock_cnt(1 downto 0) = "11" and tv15Khz_mode = '1') or         -- (10MHz)
 						  (clock_cnt(0) = '1'           and tv15Khz_mode = '0') else '0';  -- (20MHz)
 video_ce <= pix_ena;
@@ -452,42 +456,41 @@ begin
 	end if;
 end process;
 
-
---------------------
--- players inputs --
---------------------
--- "111" for test & tilt & unused
---input_0 <= not service & "111" & not start2 & not start1 & not coin2 & not coin1;
---input_1 <= "11" & not p1_fire2 & not p1_fire1 & not p1_up & not p1_down & not p1_left &  not p1_right;
---input_2 <= "11" & not p2_fire2 & not p2_fire1 & not p2_up & not p2_down & not p2_left &  not p2_right;
---input_3 <= coin_meters & upright & "111" & demo_sound & "11";
---input_4 <= x"FF";
-
 ------------------------------------------
 -- cpu data input with address decoding --
 ------------------------------------------
-cpu_di <= cpu_rom_do   		 when cpu_mreq_n = '0' and cpu_addr(15 downto 12) < X"E" else    -- 0000-DFFF
-			 wram_do     		 when cpu_mreq_n = '0' and (cpu_addr and X"F800") = x"E000" else -- E000-E7FF
-			 sp_ram_cache_do_r when cpu_mreq_n = '0' and (cpu_addr and x"FC00") = x"E800" else -- sprite ram  E800-E9FF + mirroring 0200
-			 bg_ram_do_r       when cpu_mreq_n = '0' and (cpu_addr and x"F800") = x"F000" else -- video ram   F000-F7FF
-			 ctc_do           when cpu_int_ack_n = '0' or ctc_ce = '1'                     else -- ctc (interrupt vector or counter data)
-			 ssio_do           when cpu_ioreq_n = '0' and cpu_addr(7 downto 5) = "000" else  -- 0x00-0x1F
-   		 X"FF";
-		 
+cpu_di3 <= cpu_rom_do   	  when cpu_mreq_n = '0' and cpu_addr(15 downto 12) < X"E"    else    -- 0000-DFFF
+			  wram_do     		  when cpu_mreq_n = '0' and (cpu_addr and X"F800") = x"E000" else -- E000-E7FF
+			  sp_ram_cache_do_r when cpu_mreq_n = '0' and (cpu_addr and x"FC00") = x"E800" else -- sprite ram  E800-E9FF + mirroring 0200
+			  bg_ram_do_r       when cpu_mreq_n = '0' and (cpu_addr and x"F800") = x"F000" else -- video ram   F000-F7FF
+			  ctc_do            when cpu_int_ack_n = '0' or ctc_ce = '1'                   else -- ctc (interrupt vector or counter data)
+			  ssio_do           when cpu_ioreq_n = '0' and cpu_addr(7 downto 5) = "000"    else  -- 0x00-0x1F
+   		  X"FF";
+
+cpu_di2 <= cpu_rom_do   	  when cpu_mreq_n = '0' and cpu_addr(15 downto 12) < X"C"    else    -- 0000-BFFF
+			  wram_do     	 	  when cpu_mreq_n = '0' and (cpu_addr and X"E000") = x"C000" else -- C000-C7FF + mirroring 1800
+			  sp_ram_cache_do_r when cpu_mreq_n = '0' and (cpu_addr and x"E800") = x"E000" else -- sprite ram  E000-E1FF + mirroring 1600
+			  bg_ram_do_r       when cpu_mreq_n = '0' and (cpu_addr and x"E800") = x"E800" else -- video ram   E800-EFFF + mirroring 1000
+			  ctc_do            when cpu_int_ack_n = '0' or ctc_ce = '1'                   else -- ctc (interrupt vector or counter data)
+			  ssio_do           when cpu_ioreq_n = '0' and cpu_addr(7 downto 5) = "000"    else  -- 0x00-0x1F
+   		  X"FF";
+
+cpu_di <= cpu_di3 when mcr2p5 = '0' else cpu_di2;
+ 
 ------------------------------------------------------------------------
 -- Misc registers : ctc write enable / interrupt acknowledge
 ------------------------------------------------------------------------
 cpu_int_ack_n     <= cpu_ioreq_n or cpu_m1_n;
 ctc_ce            <= '1' when cpu_ioreq_n = '0' and cpu_addr(7 downto 4) = x"F" else '0';
-ctc_counter_2_trg <= '1' when (vcnt >= 240 and vcnt <= 262 and tv15Khz_mode = '1') or (vcnt >= 480 and tv15Khz_mode = '0') else '0';
+ctc_counter_2_trg <= '1' when mcr2p5 = '0' and ((vcnt >= 240 and vcnt <= 262 and tv15Khz_mode = '1') or (vcnt >= 480 and tv15Khz_mode = '0')) else '0';
 ctc_counter_3_trg <= '1' when top_frame = '1' and ((vcnt = 246 and tv15Khz_mode = '1') or (vcnt = 493 and tv15Khz_mode = '0')) else '0';
 
 ------------------------------------------
 -- write enable / ram access from CPU --
 ------------------------------------------
-wram_we         <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (cpu_addr and x"F800") = x"E000" else '0';
-sp_ram_cache_we <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (cpu_addr and x"FC00") = x"E800" and hcnt(0) = '0' else '0';
-bg_ram_we       <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (cpu_addr and x"F800") = x"F000" and hcnt(0) = '0' else '0';
+wram_we         <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (((cpu_addr and x"F800") = x"E000" and mcr2p5='0') or ((cpu_addr and x"E000") = x"C000" and mcr2p5='1')) else '0';
+sp_ram_cache_we <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (((cpu_addr and x"FC00") = x"E800" and mcr2p5='0') or ((cpu_addr and x"E800") = x"E000" and mcr2p5='1')) and hcnt(0) = '0' else '0';
+bg_ram_we       <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (((cpu_addr and x"F800") = x"F000" and mcr2p5='0') or ((cpu_addr and x"E800") = x"E800" and mcr2p5='1')) and hcnt(0) = '0' else '0';
 
 ssio_iowe <= '1' when cpu_wr_n = '0' and cpu_ioreq_n = '0' else '0';
 
@@ -614,7 +617,8 @@ sp_col <= sp_buffer_ram1_do_r(15 downto 12) when (sp_buffer_sel = '0') and (hfli
 --------------------
 bg_ram_addr <= cpu_addr(10 downto 0) when hcnt(0) = '0' else vflip(8 downto 4) & hflip(8 downto 4) & hcnt(1);
 
-bg_code_line <= bg_attr(1 downto 0) & bg_code_r & (vflip(3 downto 1) xor (bg_attr(3) & bg_attr(3) & bg_attr(3) ) ) & (hflip(3) xor bg_attr(2));
+bg_code_line <= bg_attr(1 downto 0) & bg_code_r & (vflip(3 downto 1) xor (bg_attr(3) & bg_attr(3) & bg_attr(3) ) ) & (hflip(3) xor bg_attr(2)) when mcr2p5='0' else
+                   '0' & bg_attr(0) & bg_code_r & (vflip(3 downto 1) xor (bg_attr(2) & bg_attr(2) & bg_attr(2) ) ) & (hflip(3) xor bg_attr(1));
 
 process (clock_vid)
 begin
@@ -635,13 +639,21 @@ begin
 										bg_code_r <= bg_code;	
 					when others => null;
 				end case;			
-				
-				case hflip(2 downto 1) xor (bg_attr(2) & bg_attr(2)) is
-					when "00"   => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(7 downto 6) & bg_graphx1_do(7 downto 6);
-					when "01"   => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(5 downto 4) & bg_graphx1_do(5 downto 4);
-					when "10"   => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(3 downto 2) & bg_graphx1_do(3 downto 2);
-					when others => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(1 downto 0) & bg_graphx1_do(1 downto 0);
-				end case;
+				if mcr2p5 = '0' then
+					case hflip(2 downto 1) xor (bg_attr(2) & bg_attr(2)) is
+						when "00"   => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(7 downto 6) & bg_graphx1_do(7 downto 6);
+						when "01"   => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(5 downto 4) & bg_graphx1_do(5 downto 4);
+						when "10"   => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(3 downto 2) & bg_graphx1_do(3 downto 2);
+						when others => bg_palette_addr <= bg_attr(5 downto 4) & bg_graphx2_do(1 downto 0) & bg_graphx1_do(1 downto 0);
+					end case;
+				else
+					case hflip(2 downto 1) xor (bg_attr(1) & bg_attr(1)) is
+						when "00"   => bg_palette_addr <= bg_attr(4 downto 3) & bg_graphx2_do(7 downto 6) & bg_graphx1_do(7 downto 6);
+						when "01"   => bg_palette_addr <= bg_attr(4 downto 3) & bg_graphx2_do(5 downto 4) & bg_graphx1_do(5 downto 4);
+						when "10"   => bg_palette_addr <= bg_attr(4 downto 3) & bg_graphx2_do(3 downto 2) & bg_graphx1_do(3 downto 2);
+						when others => bg_palette_addr <= bg_attr(4 downto 3) & bg_graphx2_do(1 downto 0) & bg_graphx1_do(1 downto 0);
+					end case;
+				end if;
 			end if;
 			
 			sp_palette_addr <= ((not sp_col(1 downto 0)) xor (video_hflip & video_hflip)) & sp_vid;
@@ -654,7 +666,7 @@ end process;
 ---------------------------
 -- mux char/sprite video --
 ---------------------------
-palette_we <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (cpu_addr and x"F800") = x"F800" else '0'; -- 0xF800-F87F + mirroring 0x0780
+palette_we <= '1' when cpu_mreq_n = '0' and cpu_wr_n = '0' and (((cpu_addr and x"F800") = x"F800" and mcr2p5='0') or (cpu_addr(15 downto 7) = X"FF"&'1' and mcr2p5 = '1')) else '0'; -- 0xF800-F87F + mirroring 0x0780
 palette_addr <= bg_palette_addr when sp_palette_addr(2 downto 0) = "000" else sp_palette_addr;
 
 process (clock_vid)
