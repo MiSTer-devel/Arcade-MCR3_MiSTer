@@ -121,7 +121,7 @@ localparam CONF_STR = {
 	"DIP;",
 	"-;",
 	"R0,Reset;",
-	"J1,Fire A,Fire B,Fire C,Fire D,Rotate CW,Rotate CCW,Start1+Coin,Start2+Coin;",
+	"J1,Fire A,Fire B,Fire C,Fire D,Rotate CW,Rotate CCW,Start1,Start2,Coin;",
 	"jn,A,B,X,Y,R,L,Start,Select;",
 	"V,v",`BUILD_DATE
 };
@@ -256,8 +256,20 @@ always @(posedge clk_sys) begin
 end
 
 // reset signal generation
-reg reset;
-always @(posedge clk_sys) reset <= RESET | status[0] | buttons[1];
+reg reset = 1;
+reg rom_loaded = 0;
+always @(posedge clk_sys) begin
+	reg ioctl_downlD;
+	reg [15:0] reset_count;
+	ioctl_downlD <= rom_download;
+
+	// generate a second reset signal - needed for some reason
+	if (status[0] | buttons[1] | ~rom_loaded) reset_count <= 16'hffff;
+	else if (reset_count != 0) reset_count <= reset_count - 1'd1;
+
+	if (ioctl_downlD & ~rom_download) rom_loaded <= 1;
+	reset <= status[0] | buttons[1] | rom_download | ~rom_loaded | (reset_count == 16'h0001);
+end
 
 wire       pressed = ps2_key[9];
 wire [7:0] code    = ps2_key[7:0];
@@ -331,7 +343,7 @@ wire service = sw[1][0];
 
 wire m_start1  = btn_start1 | joy[10];
 wire m_start2  = btn_start2 | joy[11];
-wire m_coin1   = btn_coin1  | btn_coin2 | joy[10] | joy[11];
+wire m_coin1   = btn_coin1  | btn_coin2 | joy[12] | (mod_dotron & (joy[10] | joy[11]));
 
 wire m_right1  = btn_right  | joy1[0];
 wire m_left1   = btn_left   | joy1[1];
