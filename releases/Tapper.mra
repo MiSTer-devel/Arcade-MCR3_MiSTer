@@ -13,8 +13,9 @@
 		<dip bits="7"    name="Coin Meters" ids="1,2"/>
 		<dip bits="8"    name="Service" ids="Off,On"/>
 	</switches>
+	<buttons names="Fill,-,-,-,-,-,Start 1P,Start 2P,Coin" default="A,Start,Select,R"/>
 	<rom index="1">
-		<part>0</part>
+		<part>00</part>
 	</rom>
 	<rom index="0" zip="tapper.zip" md5="7300967c61a0f1b887c12f3989e500bb" type="merged|nonmerged">
 		<part name="tapper_c.p.u._pg_0_1c_1-27-84.1c"/>

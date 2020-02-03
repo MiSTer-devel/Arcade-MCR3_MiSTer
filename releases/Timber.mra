@@ -13,9 +13,10 @@
 		<dip bits="7"    name="Coin Meters" ids="1,2"/>
 		<dip bits="8"    name="Service" ids="Off,On"/>
 	</switches>
+	<buttons names="Axe Right,Axe Left,-,-,-,-,Start 1P,Start 2P,Coin" default="A,Y,Start,Select,R"/>
 	<rom index="1">
-		<part>1</part>
-	</rom>	
+		<part>01</part>
+	</rom>
 	<rom index="0" zip="timber.zip" md5="87b3b4c330d79006b148d182885107b2" type="merged|nonmerged">
 		<part crc="377032ab" name="timpg0.bin"/>
 		<part crc="fd772836" name="timpg1.bin"/>

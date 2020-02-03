@@ -12,8 +12,9 @@
 		<dip bits="1"  name="Cabinet" ids="Upright,Cocktail"/>
 		<dip bits="8"  name="Service" ids="Off,On"/>
 	</switches>
+	<buttons names="Blast,-,-,-,-,-,Start 1P,Start 2P,Coin" default="A,Start,Select,R"/>
 	<rom index="1">
-		<part>3</part>
+		<part>03</part>
 	</rom>
 	<rom index="0" zip="journey.zip" md5="95d0859c7922308b094486d0d624c727" type="merged|nonmerged">
 		<part crc="f2618913" name="d2"/>
