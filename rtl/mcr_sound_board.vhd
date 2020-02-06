@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------------
--- Tapper sound board by Dar (darfpga@aol.fr) (19/10/2019)
+-- MCR sound board by Dar (darfpga@aol.fr) (19/10/2019)
 -- http://darfpga.blogspot.fr
 ---------------------------------------------------------------------------------
 -- gen_ram.vhd & io_ps2_keyboard
@@ -52,10 +52,12 @@ use ieee.std_logic_1164.all;
 use ieee.std_logic_unsigned.all;
 use ieee.numeric_std.all;
 
-entity tapper_sound_board is
+entity mcr_sound_board is
 port(
- clock_40     : in std_logic;
- reset        : in std_logic;
+ clock_40      : in std_logic;
+ reset         : in std_logic;
+ 
+ enable        : in std_logic := '1';
  
  main_cpu_addr : in std_logic_vector(7 downto 0);
  
@@ -63,23 +65,22 @@ port(
  ssio_di       : in std_logic_vector(7 downto 0); 
  ssio_do       : out std_logic_vector(7 downto 0);
  
- input_0 : in std_logic_vector(7 downto 0);
- input_1 : in std_logic_vector(7 downto 0);
- input_2 : in std_logic_vector(7 downto 0);
- input_3 : in std_logic_vector(7 downto 0);
- input_4 : in std_logic_vector(7 downto 0);
+ input_0       : in std_logic_vector(7 downto 0);
+ input_1       : in std_logic_vector(7 downto 0);
+ input_2       : in std_logic_vector(7 downto 0);
+ input_3       : in std_logic_vector(7 downto 0);
+ input_4       : in std_logic_vector(7 downto 0);
+ output_4      : out std_logic_vector(7 downto 0);
+ separate_audio: in std_logic;
  
- separate_audio : in std_logic;
- 
- audio_out_l : out std_logic_vector(15 downto 0);
- audio_out_r : out std_logic_vector(15 downto 0);
-
- cpu_rom_addr : out std_logic_vector(13 downto 0);
- cpu_rom_do : in std_logic_vector(7 downto 0)
+ audio_out_l   : out std_logic_vector(15 downto 0);
+ audio_out_r   : out std_logic_vector(15 downto 0);
+ cpu_rom_addr  : out std_logic_vector(13 downto 0);
+ cpu_rom_do    : in std_logic_vector(7 downto 0)
  );
-end tapper_sound_board;
+end mcr_sound_board;
 
-architecture struct of tapper_sound_board is
+architecture struct of mcr_sound_board is
 
  signal reset_n   : std_logic;
  signal clock_snd : std_logic;
@@ -100,8 +101,6 @@ architecture struct of tapper_sound_board is
  signal cpu_ioreq_n : std_logic;
  signal cpu_irq_n   : std_logic;
  signal cpu_m1_n    : std_logic;
- 
--- signal cpu_rom_do  : std_logic_vector( 7 downto 0);
  
  signal wram_we     : std_logic;
  signal wram_do     : std_logic_vector( 7 downto 0);
@@ -198,7 +197,7 @@ begin
 	end if;   		
 end process;
 --
-cpu_ena  <= '1' when clock_cnt1 = "00000" else '0'; -- (2.0MHz)
+cpu_ena  <= enable when clock_cnt1 = "00000" else '0'; -- (2.0MHz)
 
 ena_4Mhz <= '1' when clock_cnt1 = "00000" or
 							clock_cnt1 = "01010" else '0'; -- (4.0MHz)
@@ -410,30 +409,15 @@ port map(
   RESET_n => reset_n,
   CLK     => clock_snd,
   CEN     => cpu_ena,
-  WAIT_n  => '1',
   INT_n   => cpu_irq_n,
-  NMI_n   => '1', --cpu_nmi_n,
-  BUSRQ_n => '1',
-  --M1_n    => cpu_m1_n,
   MREQ_n  => cpu_mreq_n,
-  --IORQ_n  => cpu_ioreq_n,
   RD_n    => cpu_rd_n,
   WR_n    => cpu_wr_n,
-  RFSH_n  => open,
-  HALT_n  => open,
-  BUSAK_n => open,
   A       => cpu_addr,
   DI      => cpu_di,
   DO      => cpu_do
 );
 
--- cpu program ROM 0x0000-0x3FFF
---rom_cpu : entity work.tapper_sound_cpu
---port map(
--- clk  => clock_sndn,
--- addr => cpu_addr(13 downto 0),
--- data => cpu_rom_do
---);
 cpu_rom_addr <= cpu_addr(13 downto 0);
 
 -- working RAM   0x8000-0x83FF
@@ -457,6 +441,11 @@ begin
 		iram_3_do <= (others => '0');
 	else
 		if rising_edge(clock_snd) then
+
+			if ssio_iowe = '1' and main_cpu_addr(7 downto 2) = "000001" then  -- 0x04 - 0x07
+				output_4 <= ssio_di;
+			end if;
+
 			if ssio_iowe = '1' and main_cpu_addr(7 downto 2) = "000111" then  -- 0x1C - 0x1F
 				case main_cpu_addr(1 downto 0) is
 				when "00" => iram_0_do <= ssio_di;

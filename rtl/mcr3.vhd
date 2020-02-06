@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------------
--- Tapper by Dar (darfpga@aol.fr) (22/11/2019)
+-- MCR3 by Dar (darfpga@aol.fr) (22/11/2019)
 -- http://darfpga.blogspot.fr
 ---------------------------------------------------------------------------------
 --
@@ -130,7 +130,7 @@ use ieee.std_logic_1164.all;
 use ieee.std_logic_unsigned.all;
 use ieee.numeric_std.all;
 
-entity tapper is
+entity mcr3 is
 port(
  clock_40     : in std_logic;
  reset        : in std_logic;
@@ -171,9 +171,9 @@ port(
  dl_data          : in std_logic_vector( 7 downto 0);
  dl_wr            : in std_logic
  );
-end tapper;
+end mcr3;
 
-architecture struct of tapper is
+architecture struct of mcr3 is
 
  signal reset_n   : std_logic;
  signal clock_vid : std_logic;
@@ -858,7 +858,7 @@ dl_bg_graphics_1_we <= '1' when dl_wr = '1' and dl_addr(15 downto 14) = "00" els
 
 
 -- timber_sound_board 
-sound_board : entity work.tapper_sound_board
+sound_board : entity work.mcr_sound_board
 port map(
  clock_40    => clock_40,
  reset       => reset,

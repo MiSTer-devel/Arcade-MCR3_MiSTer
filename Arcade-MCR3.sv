@@ -228,7 +228,9 @@ sdram sdram
 	.cpu1_q        ( rom_do ),
 	.cpu2_addr     ( rom_download ? 16'hffff : (16'h7000 + snd_addr[13:1]) ),
 	.cpu2_q        ( snd_do ),
-	
+	.cpu3_addr     ( ),
+	.cpu3_q        ( ),
+
 	// port2 for sprite graphics
 	.port2_req     ( port2_req ),
 	.port2_ack     ( ),
@@ -244,11 +246,8 @@ sdram sdram
 
 // ROM download controller
 always @(posedge clk_sys) begin
-	reg        ioctl_wr_last = 0;
-
-	ioctl_wr_last <= ioctl_wr && !ioctl_index;
 	if (rom_download) begin
-		if (~ioctl_wr_last && (ioctl_wr && !ioctl_index)) begin
+		if (ioctl_wr && rom_download) begin
 			port1_req <= ~port1_req;
 			port2_req <= ~port2_req;
 		end
@@ -438,13 +437,13 @@ always @(*) begin
 end
 
 wire [7:0] spin_tron;
-spinner spinner_tr (
-	.clock_40(clk_sys),
+spinner #(10) spinner_tr
+(
+	.clk(clk_sys),
 	.reset(reset),
-	.btn_acc(0),
-	.btn_left(m_rccw),
-	.btn_right(m_rcw),
-	.ctc_zc_to_2(vs),
+	.minus(m_rccw),
+	.plus(m_rcw),
+	.strobe(vs),
 	.use_spinner(status[7]),
 	.spin_angle(spin_tron)
 );
@@ -477,7 +476,7 @@ wire [15:0] audio_l, audio_r;
 assign AUDIO_L = audio_l;
 assign AUDIO_R = audio_r;
 
-Tapper Tapper
+mcr3 mcr3
 (
 	.clock_40(clk_sys),
 	.reset(reset),
@@ -491,25 +490,24 @@ Tapper Tapper
 	.video_ce(ce_pix),
 	.video_hflip(mod_dotron),
 	.tv15Khz_mode(1),
-	//.separate_audio(1'b1),
 	.separate_audio(status[6]),
 	.audio_out_l(audio_l),
 	.audio_out_r(audio_r),
-	.input_0      ( input_0),
-	.input_1      ( input_1),
-	.input_2      ( input_2),
-	.input_3      ( input_3),
-	.input_4      ( input_4),	
-	.mcr2p5       ( mod_journey ),
-	.cpu_rom_addr ( rom_addr ),
-	.cpu_rom_do   ( rom_addr[0] ? rom_do[15:8] : rom_do[7:0] ),
-	.snd_rom_addr ( snd_addr ),
-	.snd_rom_do   ( snd_addr[0] ? snd_do[15:8] : snd_do[7:0] ),
-	.sp_addr      ( sp_addr ),
-	.sp_graphx32_do ( sp_do ),
-	.dl_addr      ( dl_addr    ),
-	.dl_wr        ( ioctl_wr & !ioctl_index),
-	.dl_data      ( ioctl_dout )
+	.input_0(input_0),
+	.input_1(input_1),
+	.input_2(input_2),
+	.input_3(input_3),
+	.input_4(input_4),	
+	.mcr2p5(mod_journey),
+	.cpu_rom_addr(rom_addr),
+	.cpu_rom_do(rom_addr[0] ? rom_do[15:8] : rom_do[7:0]),
+	.snd_rom_addr(snd_addr),
+	.snd_rom_do(snd_addr[0] ? snd_do[15:8] : snd_do[7:0]),
+	.sp_addr(sp_addr),
+	.sp_graphx32_do(sp_do),
+	.dl_addr(dl_addr),
+	.dl_wr(ioctl_wr&!ioctl_index),
+	.dl_data(ioctl_dout)
 );
 
 endmodule
