@@ -190,7 +190,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 wire rom_download = ioctl_download && !ioctl_index;
 
 wire [15:0] rom_addr;
-wire [15:0] rom_do;
+wire  [7:0] rom_do;
 wire [13:0] snd_addr;
 wire [15:0] snd_do;
 wire [14:0] sp_addr;
@@ -224,10 +224,10 @@ sdram sdram
 	.port1_d       ( {ioctl_dout, ioctl_dout} ),
 	.port1_q       ( ),
 
-	.cpu1_addr     ( rom_download ? 16'hffff : {1'b0, rom_addr[15:1]} ),
-	.cpu1_q        ( rom_do ),
-	.cpu2_addr     ( rom_download ? 16'hffff : (16'h7000 + snd_addr[13:1]) ),
-	.cpu2_q        ( snd_do ),
+	.cpu1_addr     ( rom_download ? 16'hffff : (16'h7000 + snd_addr[13:1]) ),
+	.cpu1_q        ( snd_do ),
+	.cpu2_addr     ( ),
+	.cpu2_q        ( ),
 	.cpu3_addr     ( ),
 	.cpu3_q        ( ),
 
@@ -242,6 +242,18 @@ sdram sdram
 
 	.sp_addr       ( rom_download ? 15'h7fff : sp_addr ),
 	.sp_q          ( sp_do )
+);
+
+dpram #(8,16) cpu_rom
+(
+	.clk_a(clk_sys),
+	.we_a(ioctl_wr && rom_download && !ioctl_addr[24:16]),
+	.addr_a(ioctl_addr[15:0]),
+	.d_a(ioctl_dout),
+
+	.clk_b(clk_sys),
+	.addr_b(rom_addr),
+	.q_b(rom_do)
 );
 
 // ROM download controller
@@ -500,7 +512,7 @@ mcr3 mcr3
 	.input_4(input_4),	
 	.mcr2p5(mod_journey),
 	.cpu_rom_addr(rom_addr),
-	.cpu_rom_do(rom_addr[0] ? rom_do[15:8] : rom_do[7:0]),
+	.cpu_rom_do(rom_do),
 	.snd_rom_addr(snd_addr),
 	.snd_rom_do(snd_addr[0] ? snd_do[15:8] : snd_do[7:0]),
 	.sp_addr(sp_addr),

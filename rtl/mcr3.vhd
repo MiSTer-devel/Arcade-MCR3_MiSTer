@@ -482,7 +482,7 @@ cpu_di <= cpu_di3 when mcr2p5 = '0' else cpu_di2;
 ------------------------------------------------------------------------
 cpu_int_ack_n     <= cpu_ioreq_n or cpu_m1_n;
 ctc_ce            <= '1' when cpu_ioreq_n = '0' and cpu_addr(7 downto 4) = x"F" else '0';
-ctc_counter_2_trg <= '1' when mcr2p5 = '0' and ((vcnt >= 240 and vcnt <= 262 and tv15Khz_mode = '1') or (vcnt >= 480 and tv15Khz_mode = '0')) else '0';
+ctc_counter_2_trg <= '1' when ((vcnt >= 240 and vcnt <= 262 and tv15Khz_mode = '1') or (vcnt >= 480 and tv15Khz_mode = '0')) else '0';
 ctc_counter_3_trg <= '1' when top_frame = '1' and ((vcnt = 246 and tv15Khz_mode = '1') or (vcnt = 493 and tv15Khz_mode = '0')) else '0';
 
 ------------------------------------------
@@ -689,18 +689,12 @@ port map(
   RESET_n => reset_n,
   CLK     => clock_vid,
   CEN     => cpu_ena,
-  WAIT_n  => '1',
   INT_n   => cpu_irq_n,
-  NMI_n   => '1', --cpu_nmi_n,
-  BUSRQ_n => '1',
   M1_n    => cpu_m1_n,
   MREQ_n  => cpu_mreq_n,
   IORQ_n  => cpu_ioreq_n,
   RD_n    => cpu_rd_n,
   WR_n    => cpu_wr_n,
-  RFSH_n  => open,
-  HALT_n  => open,
-  BUSAK_n => open,
   A       => cpu_addr,
   DI      => cpu_di,
   DO      => cpu_do
