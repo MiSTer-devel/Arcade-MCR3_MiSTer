@@ -55,6 +55,10 @@ Spinner - Rotate Right,Rotate Left
 Up to 2 players.
 * Up/Down/Left/Right - movements
 * A - Blast
+
+Download a sound file from mame sounds ( https://samples.mameworld.info/ click current samples ) , and put journey.zip in:
+_Arcade/sound/
+ 
  
 # ROMs
 ```
