@@ -8,5 +8,7 @@ set_global_assignment -name VHDL_FILE rtl/midssio_82s123.vhd
 set_global_assignment -name VHDL_FILE rtl/spinner.vhd
 set_global_assignment -name VHDL_FILE rtl/YM2149_linmix_sep.vhd
 set_global_assignment -name VHDL_FILE rtl/mcr_sound_board.vhd
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/wave_sound.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ddram.sv
 set_global_assignment -name VHDL_FILE rtl/mcr3.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE Arcade-MCR3.sv

@@ -90,6 +90,21 @@ module emu
 	output        SDRAM_nRAS,
 	output        SDRAM_nWE, 
 
+
+	//High latency DDR3 RAM interface
+	//Use for non-critical time purposes
+	output        DDRAM_CLK,
+	input         DDRAM_BUSY,
+	output  [7:0] DDRAM_BURSTCNT,
+	output [28:0] DDRAM_ADDR,
+	input  [63:0] DDRAM_DOUT,
+	input         DDRAM_DOUT_READY,
+	output        DDRAM_RD,
+	output [63:0] DDRAM_DIN,
+	output  [7:0] DDRAM_BE,
+	output        DDRAM_WE,
+
+
 	// Open-drain User port.
 	// 0 - D+/RX
 	// 1 - D-/TX
@@ -101,7 +116,8 @@ module emu
 
 assign VGA_F1    = 0;
 assign USER_OUT  = '1;
-assign LED_USER  = ioctl_download;
+//assign LED_USER  = ~ioctl_download;
+assign LED_USER  = output_4[0];//cassette on
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 
@@ -110,11 +126,13 @@ assign HDMI_ARY = status[1] ? 8'd9  : (status[2] | landscape) ? 8'd3 : 8'd4;
 
 `include "build_id.v" 
 localparam CONF_STR = {
-	"A.TAPPER;;",
+	"A.MCR3;;",
 	"H0O1,Aspect Ratio,Original,Wide;",
 	"H2H0O2,Orientation,Vert,Horz;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O6,Audio,Mono,Stereo;",
+	"O8,Play,Off,On;",
+	"O9,Pause,Off,On;",
 	"-;",
 	"h1O7,Rotate,Buttons,Spinner;",
 	"h1-;",
@@ -153,6 +171,8 @@ wire        ioctl_wr;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 wire  [7:0] ioctl_index;
+wire  [7:0] ioctl_data;
+wire        ioctl_wait;
 
 wire [10:0] ps2_key;
 
@@ -179,7 +199,9 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.ioctl_wr(ioctl_wr),
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
+	//.ioctl_dout(ioctl_data),
 	.ioctl_index(ioctl_index),
+	.ioctl_wait(ioctl_wait),
 
 	.joystick_0(joy1),
 	.joystick_1(joy2),
@@ -299,10 +321,11 @@ always @(posedge clk_sys) begin
 			'h06: btn_start2        <= pressed; // F2
 			//'h04: btn_start3        <= pressed; // F3
 			//'h0C: btn_start4        <= pressed; // F4
+			'h14: btn_fireA         <= pressed; // lctrl
+			'h11: btn_fireB         <= pressed; // lalt
+			'h29: btn_fireC         <= pressed; // Space
 			'h12: btn_fireD         <= pressed; // l-shift
-			'h14: btn_fireC         <= pressed; // ctrl
-			'h11: btn_fireB         <= pressed; // alt
-			'h29: btn_fireA         <= pressed; // Space
+
 			// JPAC/IPAC/MAME Style Codes
 			'h16: btn_start1        <= pressed; // 1
 			'h1E: btn_start2        <= pressed; // 2
@@ -394,6 +417,7 @@ reg  [7:0] input_1;
 reg  [7:0] input_2;
 reg  [7:0] input_3;
 reg  [7:0] input_4;
+wire [7:0] output_4;
 
 reg mod_tapper = 0;
 reg mod_timber = 0;
@@ -482,11 +506,25 @@ arcade_video #(512,240,9) arcade_video
 	.fx(status[5:3])
 );
 
-assign AUDIO_S = 0;
+//assign AUDIO_S = 0;
+//wire signed [16:0]audio_l_s = {1'b0,audio_l};  
+//wire signed [16:0]audio_r_s = {1'b0,audio_r};
 wire [15:0] audio_l, audio_r;
+//wire signed [17:0]audio_l_big = (audio_l_s -'d32768) + short_audio;
+//wire signed [17:0]audio_r_big = (audio_r_s -'d32768) + short_audio;
+//assign AUDIO_L = { audio_l_big[17], audio_l_big[16:2]};
+//assign AUDIO_R = { audio_r_big[17], audio_l_big[16:2]};
+assign AUDIO_S = ~pause;
+assign AUDIO_L =  pause? audio_l : short_audio;
+assign AUDIO_R =  pause? audio_r : short_audio;
 
-assign AUDIO_L = audio_l;
-assign AUDIO_R = audio_r;
+//wire reset = status[0] | buttons[1] ; 
+
+
+wire signed [15:0] short_audio;
+//assign audio_l  = short_audio;
+//assign audio_r = audio_l;
+
 
 mcr3 mcr3
 (
@@ -509,8 +547,10 @@ mcr3 mcr3
 	.input_1(input_1),
 	.input_2(input_2),
 	.input_3(input_3),
-	.input_4(input_4),	
+	.input_4(input_4),
+	.output_4(output_4),	
 	.mcr2p5(mod_journey),
+	.hcntout(hcnt),
 	.cpu_rom_addr(rom_addr),
 	.cpu_rom_do(rom_do),
 	.snd_rom_addr(snd_addr),
@@ -522,4 +562,101 @@ mcr3 mcr3
 	.dl_data(ioctl_dout)
 );
 
+
+wire [7:0] debug;
+
+wire [9:0] hcnt;
+
+reg toggle_switch=1'b1;
+  
+// always @(posedge clk_sys) begin
+///   //if (btn1_up==1'b1) 
+//	if (btn1_up==1'b1)
+//    toggle_switch<=~toggle_switch;
+// end
+  
+
+////////////////////////////  MEMORY  ///////////////////////////////////
+//
+//
+
+////////////////////////////  DDRAM  ///////////////////////////////////
+//
+//
+
+
+wire       wav_load = (ioctl_index == 2);
+
+assign DDRAM_CLK = clk_sys;
+ddram ddram
+(
+	.*,
+	.addr((ioctl_download & wav_load) ? ioctl_addr :   wav_addr),
+	.dout(wav_data),
+	//.din(ioctl_data),
+	.din(ioctl_dout),
+	.we(wav_wr),
+	.rd(wav_want_byte),
+	.ready(wav_data_ready)
+);
+
+
+
+//
+//  signals for DDRAM
+//
+// NOTE: the wav_wr (we) line doesn't want to stay high. It needs to be high to start, and then can't go high until wav_data_ready
+// we hold the ioctl_wait high (stop the data from HPS) until we get waV_data_ready
+
+
+
+reg wav_wr;
+always @(posedge clk_sys) begin
+	reg old_reset;
+
+	old_reset <= reset;
+	if(~old_reset && reset) ioctl_wait <= 0;
+
+	wav_wr <= 0;
+	if(ioctl_wr & wav_load) begin
+		ioctl_wait <= 1;
+		wav_wr <= 1;
+	end
+	else if(~wav_wr & ioctl_wait & wav_data_ready) begin
+		ioctl_wait <= 0;
+	end
+end
+
+
+reg pause;
+always @(posedge clk_sys) begin
+	pause<=~output_4[0];
+end
+		
+reg    [27:0]wav_addr;
+wire   [7:0]wav_data;
+wire wav_want_byte;
+
+wave_sound wave_sound
+(
+        .I_CLK(clk_sys),
+        .I_RSTn(~reset),
+        .I_H_CNT(hcnt[3:0]), // used to interleave data reads
+        .I_DMA_TRIG(~ioctl_download),
+        .I_DMA_STOP(ioctl_download),
+        .I_DMA_CHAN(3'b010), // 8 channels
+        .I_DMA_ADDR(16'b0),
+        .I_DMA_DATA(wav_data), // Data coming back from wave ROM
+	//.I_PAUSE(~output_4[0]),
+	.I_PAUSE(pause),
+        .O_DMA_ADDR(wav_addr), // output address to wave ROM
+        .O_DMA_READ(wav_want_byte), // read a byte
+        .I_DMA_READY(wav_data_ready), // read a byte
+	.I_LOOP(1'b1),
+        .debug(debug),
+        .O_SND(short_audio)
+);
+
+
 endmodule
+

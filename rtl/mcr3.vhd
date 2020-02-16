@@ -155,8 +155,9 @@ port(
  input_2        : in std_logic_vector( 7 downto 0);
  input_3        : in std_logic_vector( 7 downto 0);
  input_4        : in std_logic_vector( 7 downto 0);
- 
+ output_4       : out std_logic_vector( 7 downto 0);
  mcr2p5         : in  std_logic;
+ hcntout           : out std_logic_vector( 9 downto 0);
 
  cpu_rom_addr   : out std_logic_vector(15 downto 0);
  cpu_rom_do     : in std_logic_vector(7 downto 0);
@@ -340,6 +341,7 @@ begin
 		if rising_edge(clock_vid) then
 			if pix_ena = '1' then
 		
+				hcntout <= hcnt;
 				hcnt <= hcnt + 1;
 				if hcnt = 633 then
 					hcnt <= (others=>'0');
@@ -482,7 +484,7 @@ cpu_di <= cpu_di3 when mcr2p5 = '0' else cpu_di2;
 ------------------------------------------------------------------------
 cpu_int_ack_n     <= cpu_ioreq_n or cpu_m1_n;
 ctc_ce            <= '1' when cpu_ioreq_n = '0' and cpu_addr(7 downto 4) = x"F" else '0';
-ctc_counter_2_trg <= '1' when ((vcnt >= 240 and vcnt <= 262 and tv15Khz_mode = '1') or (vcnt >= 480 and tv15Khz_mode = '0')) else '0';
+ctc_counter_2_trg <= '1' when mcr2p5 = '0' and ((vcnt >= 240 and vcnt <= 262 and tv15Khz_mode = '1') or (vcnt >= 480 and tv15Khz_mode = '0')) else '0';
 ctc_counter_3_trg <= '1' when top_frame = '1' and ((vcnt = 246 and tv15Khz_mode = '1') or (vcnt = 493 and tv15Khz_mode = '0')) else '0';
 
 ------------------------------------------
@@ -689,12 +691,18 @@ port map(
   RESET_n => reset_n,
   CLK     => clock_vid,
   CEN     => cpu_ena,
+  WAIT_n  => '1',
   INT_n   => cpu_irq_n,
+  NMI_n   => '1', --cpu_nmi_n,
+  BUSRQ_n => '1',
   M1_n    => cpu_m1_n,
   MREQ_n  => cpu_mreq_n,
   IORQ_n  => cpu_ioreq_n,
   RD_n    => cpu_rd_n,
   WR_n    => cpu_wr_n,
+  RFSH_n  => open,
+  HALT_n  => open,
+  BUSAK_n => open,
   A       => cpu_addr,
   DI      => cpu_di,
   DO      => cpu_do
@@ -868,7 +876,7 @@ port map(
  input_2 => input_2,
  input_3 => input_3,
  input_4 => input_4,
- 
+ output_4 => output_4,
  separate_audio => separate_audio,
  audio_out_l    => audio_out_l,
  audio_out_r    => audio_out_r,
