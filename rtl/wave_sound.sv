@@ -7,39 +7,27 @@
 //
 //============================================================================
 
-module wave_sound
+module wave_sound #(parameter SYSCLOCK = 40000000)
 (
-	input		I_CLK,
-	input		[31:0] I_CLK_SPEED,
-	input		I_RSTn,
-	input		[3:0]I_H_CNT, // used to interleave data reads
-	input		I_DMA_TRIG,
-	input		I_DMA_STOP,
-	input		[2:0]I_DMA_CHAN, // 8 channels
-	input		[27:0]I_DMA_ADDR,
-	input		[7:0]I_DMA_DATA, // Data coming back from wave ROM
-	input		I_DMA_READY,  // data is ready
-	input		I_PAUSE,
-	input		I_LOOP,
+	input         I_CLK,
+	input         I_RST,
+
+	input  [27:0] I_BASE_ADDR,
+	input         I_LOOP,
+	input         I_PAUSE,
 	
-	output		O_DMA_READ,  // read a byte
-	output		[27:0]O_DMA_ADDR, // output address to wave ROM
-	output		[7:0] debug,
-	output		signed [15:0]O_SND
+	output [27:0] O_ADDR, // output address to wave ROM
+	output        O_READ, // read a byte
+	input   [7:0] I_DATA,  // Data coming back from wave ROM
+	input         I_READY, // data is ready
+
+	output [15:0] O_PCM
 );
 
-reg [7:0] byte_0;
-reg [11:0]W_DIV;
-reg [27:0]W_DMA_ADDR;
-reg [27:0]W_DMA_LEN;
-reg signed [7:0]W_DMA_DATA;
-reg signed [7:0]W_SAMPLE_TOP;
-reg [27:0]W_DMA_CNT;
-reg W_DMA_EN = 1'b0;
-reg [11:0]sample;
-reg W_DMA_TRIG;
-reg signed [15:0]W_SAMPL;
-reg inheader = 1'b1;
+reg [27:0] W_DMA_ADDR;
+reg [27:0] END_ADDR;
+reg        W_DMA_EN;
+reg        inheader;
 reg [15:0] num_channels;
 reg [31:0] sample_rate;
 reg [31:0] byte_rate;
@@ -48,164 +36,109 @@ reg [15:0] bits_per_sample;
 reg [31:0] data_size;
 reg [27:0] START_ADDR;
 
-reg div;
+reg  [7:0] W_SAMPL_LSB;
+reg [15:0] W_SAMPL;
 
-assign debug=byte_0;
+reg [31:0] sum;
+wire[31:0] sum_next = sum + sample_rate;
 
-always@(posedge I_CLK or negedge I_RSTn)
-begin
-  
-	if(! I_RSTn)begin
-
-		W_DMA_EN	      <= 1'b0;
-		W_DMA_CNT		<= 0;
-		W_DMA_DATA		<= 0;
-		W_DMA_ADDR		<= 0;
-		W_DMA_TRIG		<= 0;
-		sample			<= 0;
-		inheader       <= 1'b1;
-		div            <=0;
-		O_DMA_READ     <=0;
-	 
-	end else begin
-
-		// Check for DMA trigger and enable DMA.
-		W_DMA_TRIG <= I_DMA_TRIG;
-
-		if(~W_DMA_TRIG & I_DMA_TRIG) begin
-
-			W_DMA_ADDR  <= I_DMA_ADDR;
-			W_DMA_CNT	<= 0;
-			W_DMA_EN	<= 1'b1;
-			W_DMA_DATA	<= 0;
-			W_SAMPLE_TOP <=0;
-			sample		<= 0;
-			inheader <= 1'b1;
-			byte_0 <=0;
-			O_DMA_READ <=0;
-			div<=0;
-
-		end else if (W_DMA_EN == 1'b1) begin
-
-
-			// Prefetch sample.
-			if (I_H_CNT == {I_DMA_CHAN,1'b1}) begin
-				O_DMA_READ <=0;
-				div<=~div;
-				if (div) begin
-				
-				if (inheader==1'b1 && I_DMA_READY) begin
-				
-					W_DMA_DATA <= I_DMA_DATA ;
-					case (W_DMA_CNT)
-						'd01: ; // R
-						'd02: ; // I
-						'd03: ; // F
-						'd04: ; // F
-						'd23: num_channels[7:0]  <= W_DMA_DATA ;
-						'd24: num_channels[15:8] <= W_DMA_DATA;
-						'd25: sample_rate[7:0]   <= W_DMA_DATA;
-						'd26: sample_rate[15:8]  <= W_DMA_DATA;
-						'd27: sample_rate[23:16] <= W_DMA_DATA;
-						'd28: sample_rate[31:24] <= W_DMA_DATA;
-						'd29: byte_rate[7:0]   <= W_DMA_DATA;
-						'd30: byte_rate[15:8]  <= W_DMA_DATA;
-						'd31: byte_rate[23:16] <= W_DMA_DATA;
-						'd32: byte_rate[31:24] <= W_DMA_DATA;
-						'd33: block_align[7:0]  <= W_DMA_DATA ;
-						'd34: block_align[15:8] <= W_DMA_DATA;
-						'd35: bits_per_sample[7:0]  <= W_DMA_DATA ;
-						'd36: bits_per_sample[15:8] <= W_DMA_DATA;
-						'd41: data_size[7:0]  <= W_DMA_DATA;
-						'd42: data_size[15:8] <= W_DMA_DATA;
-						'd43: data_size[23:16] <= W_DMA_DATA;
-						'd44: 
-							begin 
-								data_size[31:24] <= W_DMA_DATA; 
-								$display("num_channels %x %d\n",num_channels,num_channels);
-								$display("sample_rate %x %d\n",sample_rate,sample_rate);
-								$display("byte_rate %x %d\n",byte_rate,byte_rate);
-								$display("block_align%x %d\n",block_align,block_align);
-								$display("bits_per_sample %x %d\n",bits_per_sample,bits_per_sample);
-								$display("data_size %x %d\n",data_size,data_size);
-								$display("data_size %x %d\n",data_size,data_size);
-								$display("data_size %x %d\n",data_size[15:0],data_size[15:0]);
-								W_DMA_LEN<=data_size[27:0]+16'd45; // needs to be odd 
-								W_DMA_ADDR <= W_DMA_ADDR - 2'd2;
-								START_ADDR <= W_DMA_ADDR - 2'd2;
-								inheader <= 1'b0;
-								byte_0 <= bits_per_sample[7:0];
-								// for 40Mhz -- we should lookup the clock as well
-								//W_DIV <= I_CLK_SPEED / sample_rate; -- dont' divide in verilog
-								case (sample_rate)
-									'd44100: W_DIV<=12'd906;//544;
-									'd48000: W_DIV<=12'd833;//535;
-									'd32000: W_DIV<=12'd1250;//750;
-									'd22050: W_DIV<=12'd1814;//1088;
-									'd11025: W_DIV<=12'd3628;//2177;
-									'd8000:  W_DIV<=12'd5000;//3000;
-									default: W_DIV<=12'd5000;//3000;
-								endcase
-							end
-					endcase
-					W_DMA_CNT <= W_DMA_CNT + 1'd1;
-					W_DMA_ADDR <= W_DMA_ADDR + 1'd1;
-					O_DMA_READ <= 1;
-				end
-				else if ( bits_per_sample==16'd16 && W_DMA_ADDR[0]==1'b0 && I_DMA_READY)
-				begin
-					O_DMA_READ <=1;
-					W_SAMPLE_TOP<=I_DMA_DATA;
-					W_DMA_CNT <= W_DMA_CNT + 1'd1;
-					W_DMA_ADDR <= W_DMA_ADDR + 1'd1;
-				end else if (I_DMA_READY) begin
-					W_DMA_DATA<= I_DMA_DATA ;
-				end
-
-
-			end
-			end
-			
-			if(inheader==0  && I_PAUSE==0) begin	
-			
-
-				sample <= (sample == W_DIV-1) ? 12'b0 : sample + 1'b1;
-		
-				if (sample == W_DIV-1) begin
-					//W_SAMPL <= W_DMA_DATA[23:8];
-					if (bits_per_sample==16) begin
-						//W_SAMPL <= {W_SAMPLE_TOP,W_DMA_DATA};
-						W_SAMPL <= {W_DMA_DATA,W_SAMPLE_TOP};
-					end else begin
-						W_SAMPL <= {8'b0,W_DMA_DATA[7:0]};
-					end
-				$display("w_SAMPL: %x addr %x",W_SAMPL,W_DMA_ADDR);	
-					W_DMA_ADDR <= W_DMA_ADDR + 1'd1;
-					W_DMA_CNT <= W_DMA_CNT + 1'd1;
-					O_DMA_READ<=1;
-					W_DMA_EN <= (W_DMA_CNT==W_DMA_LEN) || I_DMA_STOP ? 1'b0 : 1'b1;
-					if (W_DMA_CNT==W_DMA_LEN && I_LOOP) begin
-						W_DMA_EN<=1;
-						W_DMA_ADDR<=START_ADDR;
-						W_DMA_CNT<=0;
-					end
-				end
-			end  
-			
-		end else begin
-
-			W_DMA_ADDR	<= 0;
-			W_SAMPL		<= 0;
-
-		end
+reg ce_sample;
+always @(posedge I_CLK) begin
+	ce_sample <= 0;
+	sum <= sum_next;
+	if(sum_next >= SYSCLOCK) begin
+		sum <= sum_next - SYSCLOCK;
+		ce_sample <= 1;
 	end
-		
-  
 end
 
-assign O_DMA_ADDR	= W_DMA_ADDR;
-/* verilator lint_off WIDTH */ 
-assign O_SND      = W_SAMPL;
-/* verilator lint_on WIDTH */
+reg read_done = 0;
+always@(posedge I_CLK) begin
+
+	if(I_RST)begin
+		W_DMA_ADDR <= I_BASE_ADDR;
+		W_DMA_EN	  <= 1;
+		O_READ     <= 0;
+		inheader   <= 1;
+		read_done  <= 0;
+	end
+	else if (W_DMA_EN) begin
+		if (I_READY) O_READ <= 0;
+
+		if (I_READY & !O_READ & ~read_done) begin
+			if (inheader) begin
+				O_READ <= 1;
+				case (W_DMA_ADDR[5:0])
+					00: ; // R
+					01: ; // I
+					02: ; // F
+					03: ; // F
+					//22: num_channels[7:0]   <= I_DATA;
+					//23: num_channels[15:8]  <= I_DATA;
+					24: sample_rate[7:0]      <= I_DATA;
+					25: sample_rate[15:8]     <= I_DATA;
+					26: sample_rate[23:16]    <= I_DATA;
+					27: sample_rate[31:24]    <= I_DATA;
+					//28: byte_rate[7:0]      <= I_DATA;
+					//29: byte_rate[15:8]     <= I_DATA;
+					//30: byte_rate[23:16]    <= I_DATA;
+					//31: byte_rate[31:24]    <= I_DATA;
+					//32: block_align[7:0]    <= I_DATA;
+					//33: block_align[15:8]   <= I_DATA;
+					34: bits_per_sample[7:0]  <= I_DATA;
+					35: bits_per_sample[15:8] <= I_DATA;
+					40: data_size[7:0]        <= I_DATA;
+					41: data_size[15:8]       <= I_DATA;
+					42: data_size[23:16]      <= I_DATA;
+					43: begin 
+							data_size[31:24] <= I_DATA; 
+							//$display("num_channels %x %d\n",num_channels,num_channels);
+							$display("sample_rate %x %d\n",sample_rate,sample_rate);
+							//$display("byte_rate %x %d\n",byte_rate,byte_rate);
+							//$display("block_align%x %d\n",block_align,block_align);
+							$display("bits_per_sample %x %d\n",bits_per_sample,bits_per_sample);
+							$display("data_size %x %d\n",data_size,data_size);
+							$display("data_size %x %d\n",data_size,data_size);
+							$display("data_size %x %d\n",data_size[15:0],data_size[15:0]);
+							END_ADDR <= W_DMA_ADDR + data_size[27:0] + 16'd44;
+							START_ADDR <= W_DMA_ADDR + 1'd1;
+							inheader <= 0;
+							O_READ <= 0;
+							read_done <= 1;
+						end
+				endcase
+			end
+			else if (bits_per_sample != 16) begin
+				W_SAMPL     <= {I_DATA,I_DATA};
+				read_done   <= 1;
+			end
+			else if (!W_DMA_ADDR[0]) begin
+				W_SAMPL_LSB <= I_DATA;
+				O_READ      <= 1;
+			end
+			else begin
+				W_SAMPL     <= {I_DATA,W_SAMPL_LSB};
+				read_done   <= 1;
+			end
+			
+			W_DMA_ADDR <= W_DMA_ADDR + 1'd1;
+		end
+
+		if(read_done && ce_sample && !I_PAUSE) begin
+			read_done <= 0;
+			O_READ    <= 1;
+			W_DMA_EN  <= ~(W_DMA_ADDR >= END_ADDR);
+			if (W_DMA_ADDR >= END_ADDR && I_LOOP) begin
+				W_DMA_EN   <= 1;
+				W_DMA_ADDR <= START_ADDR;
+			end
+		end
+	end
+
+	if(I_RST || I_PAUSE || !W_DMA_EN) W_SAMPL <= 0;
+end
+
+assign O_ADDR = W_DMA_ADDR;
+assign O_PCM  = W_SAMPL;
 
 endmodule

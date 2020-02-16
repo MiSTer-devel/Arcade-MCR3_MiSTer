@@ -116,8 +116,7 @@ module emu
 
 assign VGA_F1    = 0;
 assign USER_OUT  = '1;
-//assign LED_USER  = ~ioctl_download;
-assign LED_USER  = output_4[0];//cassette on
+assign LED_USER  = ~ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 
@@ -131,8 +130,6 @@ localparam CONF_STR = {
 	"H2H0O2,Orientation,Vert,Horz;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O6,Audio,Mono,Stereo;",
-	"O8,Play,Off,On;",
-	"O9,Pause,Off,On;",
 	"-;",
 	"h1O7,Rotate,Buttons,Spinner;",
 	"h1-;",
@@ -512,25 +509,10 @@ arcade_video #(512,240,9) arcade_video
 	.fx(status[5:3])
 );
 
-//assign AUDIO_S = 0;
-//wire signed [16:0]audio_l_s = {1'b0,audio_l};  
-//wire signed [16:0]audio_r_s = {1'b0,audio_r};
 wire [15:0] audio_l, audio_r;
-//wire signed [17:0]audio_l_big = (audio_l_s -'d32768) + short_audio;
-//wire signed [17:0]audio_r_big = (audio_r_s -'d32768) + short_audio;
-//assign AUDIO_L = { audio_l_big[17], audio_l_big[16:2]};
-//assign AUDIO_R = { audio_r_big[17], audio_l_big[16:2]};
-assign AUDIO_S = ~pause;
-assign AUDIO_L =  pause? audio_l : short_audio;
-assign AUDIO_R =  pause? audio_r : short_audio;
-
-//wire reset = status[0] | buttons[1] ; 
-
-
-wire signed [15:0] short_audio;
-//assign audio_l  = short_audio;
-//assign audio_r = audio_l;
-
+assign AUDIO_S = mod_journey;
+assign AUDIO_L = mod_journey ? j_aud_l : audio_l;
+assign AUDIO_R = mod_journey ? j_aud_r : audio_r;
 
 mcr3 mcr3
 (
@@ -556,7 +538,6 @@ mcr3 mcr3
 	.input_4(input_4),
 	.output_4(output_4),	
 	.mcr2p5(mod_journey),
-	.hcntout(hcnt),
 	.cpu_rom_addr(rom_addr),
 	.cpu_rom_do(rom_do),
 	.snd_rom_addr(snd_addr),
@@ -564,42 +545,24 @@ mcr3 mcr3
 	.sp_addr(sp_addr),
 	.sp_graphx32_do(sp_do),
 	.dl_addr(dl_addr),
-	.dl_wr(ioctl_wr&!ioctl_index),
+	.dl_wr(ioctl_wr & rom_download),
 	.dl_data(ioctl_dout)
 );
 
 
-wire [7:0] debug;
-
-wire [9:0] hcnt;
-
-reg toggle_switch=1'b1;
-  
-// always @(posedge clk_sys) begin
-///   //if (btn1_up==1'b1) 
-//	if (btn1_up==1'b1)
-//    toggle_switch<=~toggle_switch;
-// end
-  
-
-////////////////////////////  MEMORY  ///////////////////////////////////
+////////////////////////////  WAV PLAYER  ///////////////////////////////////
 //
 //
 
-////////////////////////////  DDRAM  ///////////////////////////////////
-//
-//
+wire wav_load = ioctl_download && (ioctl_index == 2);
 
-
-wire       wav_load = (ioctl_index == 2);
-
-assign DDRAM_CLK = clk_sys;
+wire wav_data_ready;
+assign DDRAM_CLK = clk_mem;
 ddram ddram
 (
 	.*,
-	.addr((ioctl_download & wav_load) ? ioctl_addr :   wav_addr),
+	.addr(wav_load ? ioctl_addr : wav_addr),
 	.dout(wav_data),
-	//.din(ioctl_data),
 	.din(ioctl_dout),
 	.we(wav_wr),
 	.rd(wav_want_byte),
@@ -607,14 +570,11 @@ ddram ddram
 );
 
 
-
 //
 //  signals for DDRAM
 //
 // NOTE: the wav_wr (we) line doesn't want to stay high. It needs to be high to start, and then can't go high until wav_data_ready
 // we hold the ioctl_wait high (stop the data from HPS) until we get waV_data_ready
-
-
 
 reg wav_wr;
 always @(posedge clk_sys) begin
@@ -633,36 +593,49 @@ always @(posedge clk_sys) begin
 	end
 end
 
-
 reg pause;
+reg wav_loaded = 0;
 always @(posedge clk_sys) begin
-	pause<=~output_4[0];
+	reg old_load;
+	
+	old_load <= wav_load;
+	if(old_load & ~wav_load) wav_loaded <= 1;
+	
+	pause <= ~output_4[0];
 end
-		
-reg    [27:0]wav_addr;
-wire   [7:0]wav_data;
-wire wav_want_byte;
 
-wave_sound wave_sound
+reg  [27:0] wav_addr;
+wire  [7:0] wav_data;
+wire        wav_want_byte;
+wire [15:0] pcm_audio;
+
+wave_sound #(40000000) wave_sound
 (
-        .I_CLK(clk_sys),
-        .I_RSTn(~reset),
-        .I_H_CNT(hcnt[3:0]), // used to interleave data reads
-        .I_DMA_TRIG(~ioctl_download),
-        .I_DMA_STOP(ioctl_download),
-        .I_DMA_CHAN(3'b010), // 8 channels
-        .I_DMA_ADDR(16'b0),
-        .I_DMA_DATA(wav_data), // Data coming back from wave ROM
-	//.I_PAUSE(~output_4[0]),
+	.I_CLK(clk_sys),
+	.I_RST(reset | ~wav_loaded),
+
+	.I_BASE_ADDR(0),
+	.I_LOOP(1),
 	.I_PAUSE(pause),
-        .O_DMA_ADDR(wav_addr), // output address to wave ROM
-        .O_DMA_READ(wav_want_byte), // read a byte
-        .I_DMA_READY(wav_data_ready), // read a byte
-	.I_LOOP(1'b1),
-        .debug(debug),
-        .O_SND(short_audio)
+
+	.O_ADDR(wav_addr),        // output address to wave ROM
+	.O_READ(wav_want_byte),   // read a byte
+	.I_DATA(wav_data),        // Data coming back from wave ROM
+	.I_READY(wav_data_ready), // read a byte
+
+	.O_PCM(pcm_audio)
 );
 
+wire [16:0] j_pre_aud_l = ({{2{pcm_audio[15]}},pcm_audio[15:1]} + {1'b0,audio_l});
+wire [16:0] j_pre_aud_r = ({{2{pcm_audio[15]}},pcm_audio[15:1]} + {1'b0,audio_r});
+
+reg [15:0] j_aud_l,j_aud_r;
+always @(posedge clk_sys) begin
+	if(^j_pre_aud_l[16:15]) j_aud_l <= {15{j_pre_aud_l[16]}};
+	else j_aud_l <= j_pre_aud_l[15:0];
+
+	if(^j_pre_aud_r[16:15]) j_aud_r <= {15{j_pre_aud_r[16]}};
+	else j_aud_r <= j_pre_aud_r[15:0];
+end
 
 endmodule
-
