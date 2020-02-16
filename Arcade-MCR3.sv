@@ -176,8 +176,8 @@ wire        ioctl_wait;
 
 wire [10:0] ps2_key;
 
-wire [15:0] joy1, joy2;
-wire [15:0] joy = joy1 | joy2;
+wire [31:0] joy1, joy2;
+wire [31:0] joy = joy1 | joy2;
 
 wire [21:0] gamma_bus;
 
@@ -389,6 +389,8 @@ wire m_fire1c  = btn_fireC  | joy1[6];
 wire m_fire1d  = btn_fireD  | joy1[7];
 wire m_rcw1    =              joy1[8];
 wire m_rccw1   =              joy1[9];
+wire m_spccw1  =              joy1[30];
+wire m_spcw1   =              joy1[31];
 
 wire m_right2  = btn_right2 | joy2[0];
 wire m_left2   = btn_left2  | joy2[1];
@@ -398,8 +400,10 @@ wire m_fire2a  = btn_fire2A | joy2[4];
 wire m_fire2b  = btn_fire2B | joy2[5];
 wire m_fire2c  = btn_fire2C | joy2[6];
 wire m_fire2d  = btn_fire2D | joy2[7];
-wire m_rcw2    =              joy1[8];
-wire m_rccw2   =              joy1[9];
+wire m_rcw2    =              joy2[8];
+wire m_rccw2   =              joy2[9];
+wire m_spccw2  =              joy2[30];
+wire m_spcw2   =              joy2[31];
 
 wire m_right   = m_right1 | m_right2;
 wire m_left    = m_left1  | m_left2; 
@@ -411,6 +415,8 @@ wire m_fire_c  = m_fire1c | m_fire2c;
 wire m_fire_d  = m_fire1d | m_fire2d;
 wire m_rcw     = m_rcw1   | m_rcw2;
 wire m_rccw    = m_rccw1  | m_rccw2;
+wire m_spccw   = m_spccw1 | m_spccw2;
+wire m_spcw    = m_spcw1  | m_spcw2;
 
 reg  [7:0] input_0;
 reg  [7:0] input_1;
@@ -477,10 +483,10 @@ spinner #(10) spinner_tr
 (
 	.clk(clk_sys),
 	.reset(reset),
-	.minus(m_rccw),
-	.plus(m_rcw),
+	.minus(m_rccw | m_spccw),
+	.plus(m_rcw | m_spcw),
 	.strobe(vs),
-	.use_spinner(status[7]),
+	.use_spinner(status[7] | m_spccw | m_spcw),
 	.spin_angle(spin_tron)
 );
 
