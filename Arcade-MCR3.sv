@@ -116,7 +116,7 @@ module emu
 
 assign VGA_F1    = 0;
 assign USER_OUT  = '1;
-assign LED_USER  = ~ioctl_download;
+assign LED_USER  = ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 
@@ -131,8 +131,6 @@ localparam CONF_STR = {
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O6,Audio,Mono,Stereo;",
 	"-;",
-	"h1O7,Rotate,Buttons,Spinner;",
-	"h1-;",
 	"DIP;",
 	"-;",
 	"R0,Reset;",
@@ -175,6 +173,7 @@ wire [10:0] ps2_key;
 
 wire [31:0] joy1, joy2;
 wire [31:0] joy = joy1 | joy2;
+wire  [8:0] sp1, sp2; 
 
 wire [21:0] gamma_bus;
 
@@ -203,6 +202,9 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.joystick_0(joy1),
 	.joystick_1(joy2),
 
+	.spinner_0(sp1),
+	.spinner_1(sp2),
+ 
 	.ps2_key(ps2_key)
 );
 
@@ -415,6 +417,20 @@ wire m_rccw    = m_rccw1  | m_rccw2;
 wire m_spccw   = m_spccw1 | m_spccw2;
 wire m_spcw    = m_spcw1  | m_spcw2;
 
+reg [8:0] sp;
+always @(posedge clk_sys) begin
+	reg [8:0] old_sp1, old_sp2;
+	reg       sp_sel = 0;
+
+	old_sp1 <= sp1;
+	old_sp2 <= sp2;
+	
+	if(old_sp1 != sp1) sp_sel <= 0;
+	if(old_sp2 != sp2) sp_sel <= 1;
+
+	sp <= sp_sel ? sp2 : sp1;
+end
+
 reg  [7:0] input_0;
 reg  [7:0] input_1;
 reg  [7:0] input_2;
@@ -476,15 +492,15 @@ always @(*) begin
 end
 
 wire [7:0] spin_tron;
-spinner #(10) spinner_tr
+spinner #(10,0,5) spinner_tr
 (
 	.clk(clk_sys),
 	.reset(reset),
 	.minus(m_rccw | m_spccw),
 	.plus(m_rcw | m_spcw),
 	.strobe(vs),
-	.use_spinner(status[7] | m_spccw | m_spcw),
-	.spin_angle(spin_tron)
+	.spin_in(sp),
+	.spin_out(spin_tron)
 );
 
 wire ce_pix;
