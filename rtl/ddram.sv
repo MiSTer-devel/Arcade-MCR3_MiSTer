@@ -1,9 +1,9 @@
 //
 // ddram.v
 //
-// DE10-nano DDR3 memory interface
+// DE10-nano DDR3 memory interface for Arcade
 //
-// Copyright (c) 2017 Sorgelig
+// Copyright (c) 2020 Sorgelig
 //
 //
 // This source file is free software: you can redistribute it and/or modify
@@ -22,110 +22,181 @@
 // ------------------------------------------
 //
 
-// 8-bit version
-
 module ddram
 (
-	input         reset,
-	input         DDRAM_CLK,
+	input         CLK_VIDEO,
+	input         CE_PIXEL,
 
+	input   [7:0] VGA_R,
+	input   [7:0] VGA_G,
+	input   [7:0] VGA_B,
+	input         VGA_HS,
+	input         VGA_VS,
+	input         VGA_DE,
+
+	input         rotate_ccw,
+	input         no_rotate,
+
+	output        FB_EN,
+	output  [4:0] FB_FORMAT,
+	output [11:0] FB_WIDTH,
+	output [11:0] FB_HEIGHT,
+	output [31:0] FB_BASE,
+	output [13:0] FB_STRIDE,
+	input         FB_VBL,
+	input         FB_LL,
+
+	// side slow channel
+	input  [24:0] s_addr,
+	input         s_rd,
+	input         s_wr,
+	output [63:0] s_dout,
+	input  [63:0] s_din,
+	input   [7:0] s_be,
+	output reg    s_ack,
+
+	output        DDRAM_CLK,
 	input         DDRAM_BUSY,
 	output  [7:0] DDRAM_BURSTCNT,
 	output [28:0] DDRAM_ADDR,
-	input  [63:0] DDRAM_DOUT,
-	input         DDRAM_DOUT_READY,
-	output        DDRAM_RD,
 	output [63:0] DDRAM_DIN,
 	output  [7:0] DDRAM_BE,
 	output        DDRAM_WE,
-
-   input  [27:0] addr,        // 256MB at the end of 1GB
-   output  [7:0] dout,        // data output to cpu
-   input   [7:0] din,         // data input from cpu
-   input         we,          // cpu requests write
-   input         rd,          // cpu requests read
-   output        ready        // dout is valid. Ready to accept new read/write.
+	output        DDRAM_RD,
+	input  [63:0] DDRAM_DOUT,
+	input         DDRAM_DOUT_READY
 );
 
-assign DDRAM_BURSTCNT = 1;
-assign DDRAM_BE       = (8'd1<<ram_address[2:0]) | {8{ram_read}};
-assign DDRAM_ADDR     = {4'b0011, ram_address[27:3]}; // RAM at 0x30000000
-assign DDRAM_RD       = ram_read;
-assign DDRAM_DIN      = ram_cache;
-assign DDRAM_WE       = ram_write;
+screen_rotate screen_rotate
+(
+	.CLK_VIDEO(CLK_VIDEO),
+	.CE_PIXEL(CE_PIXEL),
 
-assign dout = ram_q;
-assign ready = ~busy;
+	.VGA_R(VGA_R),
+	.VGA_G(VGA_G),
+	.VGA_B(VGA_B),
+	.VGA_HS(VGA_HS),
+	.VGA_VS(VGA_VS),
+	.VGA_DE(VGA_DE),
 
-reg  [7:0] ram_q;
-reg [27:0] ram_address;
-reg        ram_read;
-reg [63:0] ram_cache;
-reg        ram_write;
-reg  [7:0] cached;
-reg        busy;
+	.rotate_ccw(rotate_ccw),
+	.no_rotate(no_rotate),
 
+	.FB_EN(FB_EN),
+	.FB_FORMAT(FB_FORMAT),
+	.FB_WIDTH(FB_WIDTH),
+	.FB_HEIGHT(FB_HEIGHT),
+	.FB_BASE(FB_BASE),
+	.FB_STRIDE(FB_STRIDE),
+	.FB_VBL(FB_VBL),
+	.FB_LL(FB_LL),
 
-always @(posedge DDRAM_CLK)
-begin
-	reg old_rd, old_we;
-	reg old_reset;
-	reg state;
+	.DDRAM_CLK(DDRAM_CLK),
+	.DDRAM_BUSY(DDRAM_BUSY),
+	.DDRAM_ADDR(f_addr),
+	.DDRAM_DIN(f_data),
+	.DDRAM_BE(f_be),
+	.DDRAM_WE(f_wr)
+);
 
-	old_reset <= reset;
-	if(old_reset && ~reset)
-	begin
-		busy   <= 0;
-		state  <= 0;
-		cached <= 0;
+wire [28:0] f_addr;
+wire [63:0] f_data;
+wire  [7:0] f_be;
+wire        f_wr;
+
+parameter MEM_BASE    = 4'd3;  // buffer at 0x30000000
+
+assign DDRAM_BURSTCNT = DDRAM_WE ? 8'd1 : ram_bc;
+assign DDRAM_ADDR     = s_act ? {MEM_BASE, ram_addr} : f_addr;
+assign DDRAM_BE       = s_act ? ram_be : f_be;
+assign DDRAM_DIN      = s_act ? ram_data : f_data;
+assign DDRAM_WE       = ram_wr | f_wr;
+assign DDRAM_RD       = ram_rd;
+
+reg        s_act;
+reg [63:0] s_c1_r, s_c2_r, s_dout_r;
+assign     s_dout = s_dout_r;
+
+reg [24:0] ram_addr, s_addr_r;
+reg [63:0] ram_data;
+reg        ram_wr;
+reg        ram_rd;
+reg  [7:0] ram_be;
+reg  [1:0] ram_bc = 0;
+
+always @(posedge CLK_VIDEO) begin
+	reg        old_de, old_hs;
+	reg        s_wr1, s_wr2, s_rd1, s_rd2;
+	reg [24:0] cache_addr = {25{1'b1}}, next_caddr;
+	reg        next_ack;
+	reg [11:0] pcnt;
+	reg [11:0] hbl;
+
+	ram_wr <= 0;
+	ram_rd <= 0;
+
+	s_wr1 <= s_wr;
+	s_rd1 <= s_rd;
+
+	if(s_rd1 ^ s_rd2) begin
+		s_addr_r <= s_addr;
+		if(cache_addr == s_addr) begin
+			s_ack    <= ~s_ack;
+			s_rd2    <= s_rd1;
+			s_dout_r <= s_c1_r;
+		end
+		else if((cache_addr+1'd1) == s_addr && !ram_bc) begin
+			s_ack    <= ~s_ack;
+			s_rd2    <= s_rd1;
+			s_dout_r <= s_c2_r;
+		end
 	end
 
-	if(!DDRAM_BUSY)
-	begin
-		ram_write <= 0;
-		ram_read  <= 0;
-		if(state)
-		begin
-			if(DDRAM_DOUT_READY)
-			begin
-				ram_q     <= DDRAM_DOUT[{ram_address[2:0], 3'b000} +:8];
-				ram_cache <= DDRAM_DOUT;
-				cached    <= 8'hFF;
-				state     <= 0;
-				busy      <= 0;
+	if(CE_PIXEL) begin
+		old_hs <= VGA_HS;
+		old_de <= VGA_DE;
+
+		if(old_de & ~VGA_DE) hbl <= pcnt + 1'd1;
+
+		pcnt <= pcnt + 1'd1;
+		if(~old_hs & VGA_HS) pcnt <= 0;
+
+		if(~VGA_DE && hbl && (hbl == pcnt || hbl[11:1] == pcnt) && !ram_bc) begin
+			if(s_wr1 ^ s_wr2) begin
+				cache_addr <= {25{1'b1}};
+				ram_addr   <= s_addr;
+				ram_data   <= s_dout;
+				ram_wr     <= 1;
+				ram_be     <= s_be;
+				s_ack      <= ~s_ack;
+				s_wr2      <= s_wr1;
+			end
+			else if((cache_addr+1'd1) == s_addr_r) begin
+				s_c1_r     <= s_c2_r;
+				cache_addr <= s_addr_r;
+				next_caddr <= s_addr_r;
+				ram_addr   <= s_addr_r + 1'd1;
+				ram_bc     <= 1;
+				ram_rd     <= 1;
+				ram_be     <= 8'hFF;
+			end
+			else if(cache_addr != s_addr_r) begin
+				ram_addr   <= s_addr_r;
+				next_caddr <= s_addr_r;
+				ram_rd     <= 1;
+				ram_bc     <= 2;
+				ram_be     <= 8'hFF;
 			end
 		end
-		else
-		begin
-			old_rd <= rd;
-			old_we <= we;
-			busy   <= 0;
 
-			if(~old_we && we)
-			begin
-				ram_cache[{addr[2:0], 3'b000} +:8] <= din;
-				ram_address <= addr;
-				busy        <= 1;
-				ram_write 	<= 1;
-				cached      <= ((ram_address[27:3] == addr[27:3]) ? cached : 8'h00) | (8'd1<<addr[2:0]);
-			end
+		s_act <= ~VGA_DE;
+	end
 
-			if(~old_rd && rd)
-			begin
-				busy <= 1;
-				if((ram_address[27:3] == addr[27:3]) && (cached & (8'd1<<addr[2:0])))
-				begin
-					ram_q <= ram_cache[{addr[2:0], 3'b000} +:8];
-				end
-				else
-				begin
-					ram_address <= addr;
-					ram_read    <= 1;
-					state       <= 1;
-					cached      <= 0;
-				end
-			end
-		end
+	if(DDRAM_DOUT_READY && ram_bc) begin
+		if(ram_bc == 2) s_c1_r     <= DDRAM_DOUT;
+		if(ram_bc == 1) s_c2_r     <= DDRAM_DOUT;
+		if(ram_bc == 1) cache_addr <= next_caddr;
+		ram_bc <= ram_bc - 1'd1;
 	end
 end
 
