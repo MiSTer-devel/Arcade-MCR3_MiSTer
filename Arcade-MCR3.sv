@@ -142,6 +142,7 @@ localparam CONF_STR = {
 	"A.MCR3;;",
 	"H0OEF,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"H2H0O2,Orientation,Vert,Horz;",
+	"OD,Deinterlacer hi-res,Off,On;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"O6,Audio,Mono,Stereo;",
 	"-;",
@@ -443,15 +444,23 @@ spinner #(10,0,5) spinner_tr
 	.spin_out(spin_tron)
 );
 
+wire ce_pix_old;
 wire ce_pix;
 wire hblank, vblank;
 wire hs, vs;
 wire [2:0] r,g;
 wire [2:0] b;
+always @(posedge clk_sys) begin
+        reg [2:0] div;
+
+        div <= div + 1'd1;
+        ce_pix <= !div;
+end
 
 arcade_video #(512,9) arcade_video
 (
 	.*,
+	.ce_pix(status[13] ? ce_pix_old: ce_pix),
 	.clk_video(clk_sys),
 	.RGB_in({r,g,b}),
 	.HBlank(hblank),
@@ -483,9 +492,9 @@ mcr3 mcr3
 	.video_hblank(hblank),
 	.video_hs(hs),
 	.video_vs(vs),
-	.video_ce(ce_pix),
 	.video_hflip(mod_dotron),
-	.tv15Khz_mode(1),
+	.video_ce(ce_pix_old),
+	.tv15Khz_mode(~status[13]),
 	.separate_audio(status[6]),
 	.audio_out_l(audio_l),
 	.audio_out_r(audio_r),
