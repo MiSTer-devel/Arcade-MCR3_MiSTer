@@ -444,24 +444,26 @@ spinner #(10,0,5) spinner_tr
 	.spin_out(spin_tron)
 );
 
-wire ce_pix_old;
-wire ce_pix;
 wire hblank, vblank;
 wire hs, vs;
 wire [2:0] r,g;
 wire [2:0] b;
-always @(posedge clk_sys) begin
-        reg [2:0] div;
 
-        div <= div + 1'd1;
-        ce_pix <= !div;
+wire hires = status[13] && !status[5:3];
+
+reg  ce_pix;
+always @(posedge clk_80M) begin
+	reg [2:0] div;
+	
+	div <= div + 1'd1;
+	ce_pix <= hires ? !div[1:0] : !div;
 end
 
 arcade_video #(512,9) arcade_video
 (
 	.*,
-	.ce_pix(status[13] ? ce_pix_old: ce_pix),
-	.clk_video(clk_sys),
+	.ce_pix(ce_pix),
+	.clk_video(clk_80M),
 	.RGB_in({r,g,b}),
 	.HBlank(hblank),
 	.VBlank(vblank),
@@ -493,8 +495,7 @@ mcr3 mcr3
 	.video_hs(hs),
 	.video_vs(vs),
 	.video_hflip(mod_dotron),
-	.video_ce(ce_pix_old),
-	.tv15Khz_mode(~status[13] || status[5:3]),
+	.tv15Khz_mode(~hires),
 	.separate_audio(status[6]),
 	.audio_out_l(audio_l),
 	.audio_out_r(audio_r),
