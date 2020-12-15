@@ -369,7 +369,7 @@ begin
 					end if;
 
 					video_vblank <= '1';
-					if vcnt >= 2 and vcnt < 481 then
+					if vcnt >= 0 and vcnt < 480 then
 						video_vblank <= '0';
 					end if;
 
