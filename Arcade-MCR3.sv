@@ -177,11 +177,13 @@ wire        forced_scandoubler;
 wire        direct_video;
 
 wire        ioctl_download;
+wire        ioctl_upload;
 wire        ioctl_wr;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
+wire  [7:0] ioctl_din;
 wire  [7:0] ioctl_index;
-wire  [7:0] ioctl_data;
+wire        ioctl_wait;
 
 wire [31:0] joy1, joy2;
 wire [31:0] joy = joy1 | joy2;
@@ -204,11 +206,14 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.direct_video(direct_video),
 
 	.ioctl_download(ioctl_download),
+	.ioctl_upload(ioctl_upload),
 	.ioctl_wr(ioctl_wr),
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
+	.ioctl_din(ioctl_din),
 	.ioctl_index(ioctl_index),
-
+	.ioctl_wait(ioctl_wait),
+	
 	.joystick_0(joy1),
 	.joystick_1(joy2),
 
@@ -512,9 +517,13 @@ mcr3 mcr3
 	.snd_rom_do(snd_addr[0] ? snd_do[15:8] : snd_do[7:0]),
 	.sp_addr(sp_addr),
 	.sp_graphx32_do(sp_do),
+	
 	.dl_addr(dl_addr),
 	.dl_wr(ioctl_wr & rom_download),
-	.dl_data(ioctl_dout)
+	.dl_data(ioctl_dout),
+	.dl_nvram_wr(ioctl_wr & (ioctl_index=='d4)), 
+	.dl_din(ioctl_din),
+	.dl_nvram(ioctl_index=='d4)
 );
 
 

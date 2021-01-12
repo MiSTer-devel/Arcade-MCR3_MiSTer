@@ -37,4 +37,5 @@
 		<part crc="2a30238c" name="tapper_c.p.u._bg_1_6f_12-7-83.6f"/>
 		<part crc="394ab576" name="tapper_c.p.u._bg_0_5f_12-7-83.5f"/>
 	</rom>
+	<nvram index="4" size="2048"/>
 </misterromdescription>

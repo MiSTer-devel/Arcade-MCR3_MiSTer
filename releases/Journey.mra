@@ -51,4 +51,5 @@
 	<rom index="2" zip="/sound/journey.zip" address="0x30000000" md5="none" >
 		<part name="sepways.wav"/>
 	</rom>
+	<nvram index="4" size="2048"/>
 </misterromdescription>
