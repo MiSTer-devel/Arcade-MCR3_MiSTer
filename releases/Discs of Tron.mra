@@ -46,4 +46,5 @@
 		<part crc="bb2d7a5d" name="loc-bg1.5f"/>
 		<part crc="bb2d7a5d" name="loc-bg1.5f"/>
 	</rom>
+	<nvram index="4" size="2048"/>
 </misterromdescription>
