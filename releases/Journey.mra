@@ -49,7 +49,7 @@
 		<part crc="9104c1d0" name="g4"/>
 	</rom>
 	<rom index="2" zip="/sound/journey.zip" address="0x30000000" md5="none" >
-		<part ignore_crc name="sepways.wav"/>
+		<part ignore_crc="" name="sepways.wav"/>
 	</rom>
 	<nvram index="4" size="2048"/>
 </misterromdescription>
