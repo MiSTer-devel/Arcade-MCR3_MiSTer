@@ -112,9 +112,9 @@ wire scandoubler = fx || forced_scandoubler;
 
 video_mixer #(.LINE_LENGTH(WIDTH+4), .HALF_DEPTH(DW!=24), .GAMMA(GAMMA)) video_mixer
 (
-	.clk_vid(CLK_VIDEO),
+	.CLK_VIDEO(CLK_VIDEO),
 	.ce_pix(CE),
-	.ce_pix_out(CE_PIXEL),
+	.CE_PIXEL(CE_PIXEL),
 
 	.scandoubler(scandoubler),
 	.hq2x(fx==1),
@@ -174,15 +174,17 @@ module screen_rotate
 
 	input         rotate_ccw,
 	input         no_rotate,
+	input         flip,
+	output        video_rotated,
 
-	output        FB_EN,
-	output  [4:0] FB_FORMAT,
-	output [11:0] FB_WIDTH,
-	output [11:0] FB_HEIGHT,
-	output [31:0] FB_BASE,
-	output [13:0] FB_STRIDE,
-	input         FB_VBL,
-	input         FB_LL,
+	output            FB_EN,
+	output      [4:0] FB_FORMAT,
+	output reg [11:0] FB_WIDTH,
+	output reg [11:0] FB_HEIGHT,
+	output     [31:0] FB_BASE,
+	output     [13:0] FB_STRIDE,
+	input             FB_VBL,
+	input             FB_LL,
 
 	output        DDRAM_CLK,
 	input         DDRAM_BUSY,
@@ -196,6 +198,8 @@ module screen_rotate
 
 parameter MEM_BASE    = 7'b0010010; // buffer at 0x24000000, 3x8MB
 
+reg  do_flip;
+
 assign DDRAM_CLK      = CLK_VIDEO;
 assign DDRAM_BURSTCNT = 1;
 assign DDRAM_ADDR     = {MEM_BASE, i_fb, ram_addr[22:3]};
@@ -204,11 +208,9 @@ assign DDRAM_DIN      = {ram_data,ram_data};
 assign DDRAM_WE       = ram_wr;
 assign DDRAM_RD       = 0;
 
-assign FB_EN     = ~no_rotate;
+assign FB_EN     = fb_en[2];
 assign FB_FORMAT = 5'b00110;
 assign FB_BASE   = {MEM_BASE,o_fb,23'd0};
-assign FB_WIDTH  = vsz;
-assign FB_HEIGHT = hsz;
 assign FB_STRIDE = stride;
 
 function [1:0] buf_next;
@@ -219,6 +221,19 @@ function [1:0] buf_next;
 		if ((a==1 && b==2) || (a==2 && b==1)) buf_next = 0;
 	end
 endfunction
+
+assign video_rotated = ~no_rotate;
+
+always @(posedge CLK_VIDEO) begin
+	do_flip <= no_rotate && flip;
+	if( do_flip ) begin
+		FB_WIDTH  <= hsz;
+		FB_HEIGHT <= vsz;
+	end else begin
+		FB_WIDTH  <= vsz;
+		FB_HEIGHT <= hsz;
+	end
+end
 
 reg [1:0] i_fb,o_fb;
 always @(posedge CLK_VIDEO) begin
@@ -236,6 +251,11 @@ always @(posedge CLK_VIDEO) begin
 	end
 end
 
+initial begin
+	fb_en = 0;
+end
+
+reg  [2:0] fb_en = 0;
 reg [11:0] hsz = 320, vsz = 240;
 reg [11:0] bwidth;
 reg [22:0] bufsize;
@@ -246,19 +266,23 @@ always @(posedge CLK_VIDEO) begin
 	if(CE_PIXEL) begin
 		old_vs <= VGA_VS;
 		old_de <= VGA_DE;
-		
+
 		hcnt <= hcnt + 1'd1;
 		if(~old_de & VGA_DE) begin
 			hcnt <= 1;
 			vcnt <= vcnt + 1'd1;
 		end
-		if(old_de & ~VGA_DE) hsz <= hcnt;
+		if(old_de & ~VGA_DE) begin
+			hsz <= hcnt;
+			if( do_flip ) bwidth <= hcnt + 2'd3;
+		end
 		if(~old_vs & VGA_VS) begin
 			vsz <= vcnt;
-			bwidth <= vcnt + 2'd3;
+			if( !do_flip ) bwidth <= vcnt + 2'd3;
 			vcnt <= 0;
+			fb_en <= {fb_en[1:0], ~no_rotate | flip};
 		end
-		if(old_vs & ~VGA_VS) bufsize <= hsz * stride;
+		if(old_vs & ~VGA_VS) bufsize <= (do_flip ? vsz : hsz ) * stride;
 	end
 end
 
@@ -272,21 +296,25 @@ always @(posedge CLK_VIDEO) begin
 	reg old_vs, old_de;
 
 	ram_wr <= 0;
-	if(CE_PIXEL) begin
+	if(CE_PIXEL && FB_EN) begin
 		old_vs <= VGA_VS;
 		old_de <= VGA_DE;
 
 		if(~old_vs & VGA_VS) begin
-			next_addr <= rotate_ccw ? (bufsize - stride) : {vsz-1'd1, 2'b00};
+			next_addr <=
+				do_flip    ? bufsize-3'd4 :
+				rotate_ccw ? (bufsize - stride) : {vsz-1'd1, 2'b00};
 			hcnt <= rotate_ccw ? 3'd4 : {vsz-2'd2, 2'b00};
 		end
 		if(VGA_DE) begin
 			ram_wr <= 1;
-			ram_data <= {VGA_B,VGA_G,VGA_R};
+			ram_data <= {8'd0,VGA_B,VGA_G,VGA_R};
 			ram_addr <= next_addr;
-			next_addr <= rotate_ccw ? (next_addr - stride) : (next_addr + stride);
+			next_addr <=
+				do_flip    ? next_addr-3'd4 :
+				rotate_ccw ? (next_addr - stride) : (next_addr + stride);
 		end
-		if(old_de & ~VGA_DE) begin
+		if(old_de & ~VGA_DE & ~do_flip) begin
 			next_addr <= rotate_ccw ? (bufsize - stride + hcnt) : hcnt;
 			hcnt <= rotate_ccw ? (hcnt + 3'd4) : (hcnt - 3'd4);
 		end
@@ -294,235 +322,3 @@ always @(posedge CLK_VIDEO) begin
 end
 
 endmodule
-
-//
-// version with additional slow channel for some streaming such as audio
-//
-/*
-module screen_rotate_s
-(
-	input         CLK_VIDEO,
-	input         CE_PIXEL,
-
-	input   [7:0] VGA_R,
-	input   [7:0] VGA_G,
-	input   [7:0] VGA_B,
-	input         VGA_HS,
-	input         VGA_VS,
-	input         VGA_DE,
-
-	input         rotate_ccw,
-	input         no_rotate,
-
-	output        FB_EN,
-	output  [4:0] FB_FORMAT,
-	output [11:0] FB_WIDTH,
-	output [11:0] FB_HEIGHT,
-	output [31:0] FB_BASE,
-	output [13:0] FB_STRIDE,
-	input         FB_VBL,
-	input         FB_LL,
-
-	// side slow channel
-	input  [24:0] s_addr,
-	input         s_rd,
-	input         s_wr,
-	output [63:0] s_dout,
-	input  [63:0] s_din,
-	input   [7:0] s_be,
-	output reg    s_ack,
-
-	output        DDRAM_CLK,
-	input         DDRAM_BUSY,
-	output  [7:0] DDRAM_BURSTCNT,
-	output [28:0] DDRAM_ADDR,
-	output [63:0] DDRAM_DIN,
-	output  [7:0] DDRAM_BE,
-	output        DDRAM_WE,
-	output        DDRAM_RD,
-	input  [63:0] DDRAM_DOUT,
-	input         DDRAM_DOUT_READY
-);
-
-parameter MEM_BASE    = 7'b0010010; // buffer at 0x24000000, 3x8MB
-parameter MEM_BASE_S  = 4'b0011;    // buffer at 0x30000000
-
-assign DDRAM_CLK      = CLK_VIDEO;
-assign DDRAM_BURSTCNT = ram_wr ? 8'd1 : ram_bc;
-assign DDRAM_ADDR     = s_act ? {MEM_BASE_S, ram_addr[24:0]} : {MEM_BASE, i_fb, ram_addr[22:3]};
-assign DDRAM_BE       = ram_be;
-assign DDRAM_DIN      = ram_data;
-assign DDRAM_WE       = ram_wr;
-assign DDRAM_RD       = ram_rd;
-
-assign FB_EN     = ~no_rotate;
-assign FB_FORMAT = 5'b00110;
-assign FB_BASE   = {MEM_BASE,o_fb,23'd0};
-assign FB_WIDTH  = vsz;
-assign FB_HEIGHT = hsz;
-assign FB_STRIDE = stride;
-
-function [1:0] buf_next;
-	input [1:0] a,b;
-	begin
-		buf_next = 1;
-		if ((a==0 && b==1) || (a==1 && b==0)) buf_next = 2;
-		if ((a==1 && b==2) || (a==2 && b==1)) buf_next = 0;
-	end
-endfunction
-
-reg [1:0] i_fb,o_fb;
-always @(posedge CLK_VIDEO) begin
-	reg old_vbl,old_vs;
-	old_vbl <= FB_VBL;
-	old_vs <= VGA_VS;
-
-	if(FB_LL) begin
-		if(~old_vbl & FB_VBL) o_fb<={1'b0,~i_fb[0]};
-		if(~old_vs & VGA_VS)  i_fb<={1'b0,~i_fb[0]};
-	end
-	else begin
-		if(~old_vbl & FB_VBL) o_fb<=buf_next(o_fb,i_fb);
-		if(~old_vs & VGA_VS)  i_fb<=buf_next(i_fb,o_fb);
-	end
-end
-
-reg [11:0] hsz = 320, vsz = 240;
-reg [11:0] bwidth;
-reg [22:0] bufsize;
-always @(posedge CLK_VIDEO) begin
-	reg [11:0] hcnt = 0, vcnt = 0;
-	reg old_vs, old_de;
-
-	if(CE_PIXEL) begin
-		old_vs <= VGA_VS;
-		old_de <= VGA_DE;
-		
-		hcnt <= hcnt + 1'd1;
-		if(~old_de & VGA_DE) begin
-			hcnt <= 1;
-			vcnt <= vcnt + 1'd1;
-		end
-		if(old_de & ~VGA_DE) hsz <= hcnt;
-		if(~old_vs & VGA_VS) begin
-			vsz <= vcnt;
-			bwidth <= vcnt + 2'd3;
-			vcnt <= 0;
-		end
-		if(old_vs & ~VGA_VS) bufsize <= hsz * stride;
-	end
-end
-
-wire [13:0] stride = {bwidth[11:2], 4'd0};
-
-reg s_act;
-reg [63:0] s_c1_r, s_c2_r, s_dout_r;
-assign s_dout = s_dout_r;
-
-reg [24:0] ram_addr, next_addr, s_addr_r;
-reg [63:0] ram_data;
-reg        ram_wr;
-reg        ram_rd;
-reg  [7:0] ram_be;
-reg  [1:0] ram_bc = 0;
-
-always @(posedge CLK_VIDEO) begin
-	reg [13:0] hcnt = 0;
-	reg        old_vs, old_de, old_hs;
-	reg        s_wr1, s_wr2, s_rd1, s_rd2;
-	reg [24:0] cache_addr = {25{1'b1}}, next_caddr;
-	reg        next_ack;
-	reg [11:0] pcnt;
-	reg [11:0] hbl;
-
-	ram_wr <= 0;
-	ram_rd <= 0;
-
-	s_wr1 <= s_wr;
-	s_rd1 <= s_rd;
-
-	if(s_rd1 ^ s_rd2) begin
-		s_addr_r <= s_addr;
-		if(cache_addr == s_addr) begin
-			s_ack    <= ~s_ack;
-			s_rd2    <= s_rd1;
-			s_dout_r <= s_c1_r;
-		end
-		else if((cache_addr+1'd1) == s_addr && !ram_bc) begin
-			s_ack    <= ~s_ack;
-			s_rd2    <= s_rd1;
-			s_dout_r <= s_c2_r;
-		end
-	end
-
-	if(CE_PIXEL) begin
-		old_vs <= VGA_VS;
-		old_hs <= VGA_HS;
-		old_de <= VGA_DE;
-
-		if(~old_vs & VGA_VS) begin
-			next_addr <= rotate_ccw ? (bufsize - stride) : {vsz-1'd1, 2'b00};
-			hcnt <= rotate_ccw ? 3'd4 : {vsz-2'd2, 2'b00};
-		end
-		if(VGA_DE) begin
-			s_act  <= 0;
-			ram_wr <= 1;
-			ram_be <= next_addr[2] ? 8'hF0 : 8'h0F;
-			ram_data <= {8'h00,VGA_B,VGA_G,VGA_R, 8'h00,VGA_B,VGA_G,VGA_R};
-			ram_addr <= next_addr;
-			next_addr <= rotate_ccw ? (next_addr - stride) : (next_addr + stride);
-		end
-		if(old_de & ~VGA_DE) begin
-			next_addr <= rotate_ccw ? (bufsize - stride + hcnt) : hcnt;
-			hcnt <= rotate_ccw ? (hcnt + 3'd4) : (hcnt - 3'd4);
-			hbl <= pcnt + 1'd1;
-		end
-
-		pcnt <= pcnt + 1'd1;
-		if(~old_hs & VGA_HS) pcnt <= 0;
-
-		if(~VGA_DE && hbl && (hbl == pcnt || hbl[11:1] == pcnt) && !ram_bc) begin
-			s_wr2 <= s_wr1;
-			if(s_wr1 ^ s_wr2) begin
-				s_act      <= 1;
-				ram_wr     <= 1;
-				ram_data   <= s_dout;
-				ram_addr   <= s_addr;
-				cache_addr <= {25{1'b1}};
-				ram_be     <= s_be;
-				s_ack      <= ~s_ack;
-			end
-			else if((cache_addr+1'd1) == s_addr_r) begin
-				s_c1_r     <= s_c2_r;
-				cache_addr <= s_addr_r;
-				next_caddr <= s_addr_r;
-				ram_addr   <= s_addr_r + 1'd1;
-				ram_bc     <= 1;
-				ram_rd     <= 1;
-				ram_be     <= 8'hFF;
-				s_act      <= 1;
-			end
-			else if(cache_addr != s_addr_r) begin
-				ram_addr   <= s_addr_r;
-				next_caddr <= s_addr_r;
-				ram_rd     <= 1;
-				ram_bc     <= 2;
-				ram_be     <= 8'hFF;
-				s_act      <= 1;
-			end
-		end
-	end
-	
-	if(DDRAM_DOUT_READY && ram_bc) begin
-		if(ram_bc == 2) s_c1_r     <= DDRAM_DOUT;
-		if(ram_bc == 1) s_c2_r     <= DDRAM_DOUT;
-		if(ram_bc == 1) cache_addr <= next_caddr;
-		ram_bc <= ram_bc - 1'd1;
-	end
-end
-
-endmodule
-*/
-
-
-
